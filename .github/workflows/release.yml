@@ -1,0 +1,48 @@
+name: release
+
+# 发布 Release 时自动编译 linux/arm64 二进制并附到该 Release；也可以手动运行（只产出构件，不上传）。
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          check-latest: true
+
+      - name: 获取 sing-box v1.14.4 源码
+        run: git clone --depth 1 --branch v1.14.4 https://github.com/SagerNet/sing-box.git "$RUNNER_TEMP/sing-box"
+
+      - name: 编译
+        env:
+          SB: ${{ runner.temp }}/sing-box
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          OUT="$PWD/dist/tinylane-${VER}-linux-${GOARCH}"
+          OUT="$OUT" sh build.sh
+          cd dist && sha256sum * > SHA256SUMS-${GOARCH}.txt && ls -l
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tinylane-${{ matrix.goarch }}
+          path: dist/*
+
+      - name: 附到 Release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber

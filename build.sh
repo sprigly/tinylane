@@ -2,9 +2,12 @@
 # 在沙盒编译 tinylane（linux/arm64）。源码在 src/，同步进 sing-box v1.14.4 源码树后编译。
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
-SB=/workspace/work/sbbuild/sing-box
-export PATH=/workspace/work/sbbuild/go/bin:$PATH
-export GOMODCACHE=/workspace/work/sbbuild/gomod GOFLAGS=-mod=mod CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH:-arm64}
+# 可用环境变量覆盖：SB=sing-box v1.14.4 源码目录，GOBIN_DIR=Go 所在目录，GOMODCACHE=模块缓存（CI 里用默认值）
+SB=${SB:-/workspace/work/sbbuild/sing-box}
+[ -n "${GOBIN_DIR:-}" ] && export PATH=$GOBIN_DIR:$PATH
+[ -d /workspace/work/sbbuild/go/bin ] && export PATH=/workspace/work/sbbuild/go/bin:$PATH
+[ -d /workspace/work/sbbuild/gomod ] && export GOMODCACHE=${GOMODCACHE:-/workspace/work/sbbuild/gomod}
+export GOFLAGS=-mod=mod CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH:-arm64}
 rm -rf "$SB/cmd/tinylane"; mkdir -p "$SB/cmd/tinylane"
 cp "$HERE"/src/cmd/tinylane/*.go "$SB/cmd/tinylane/"
 # M6b 图标：web/icons → src/cmd/tinylane/icons（go:embed）

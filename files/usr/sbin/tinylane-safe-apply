@@ -1,5 +1,5 @@
 #!/bin/sh
-# 死人开关：先挂定时回滚，再启动 TinyLane；N 分钟内不确认就自动 `tinylane stop`（回到普通路由），保护 wg0 远程链路。
+# 安全试运行：先挂定时回滚，再启动 TinyLane；N 分钟内不确认就自动 `tinylane stop`（回到普通路由），保护 wg0 远程链路。
 #   tinylane-safe-apply [分钟=5] [--openclash]   启动并挂回滚（--openclash：回滚时再启动 OpenClash）
 #   tinylane-safe-apply confirm                  确认，取消回滚
 #   tinylane-safe-apply status
