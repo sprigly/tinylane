@@ -195,7 +195,7 @@ type Device struct {
 	Name  string `json:"name"`
 	IP    string `json:"ip"`
 	MAC   string `json:"mac,omitempty"`
-	Mode  string `json:"mode"`            // rule | global | direct
+	Mode  string `json:"mode"`            // rule | global | direct | intl（国内直连、国外走 group）
 	Group string `json:"group,omitempty"` // global 时走哪个组/节点，默认 global_group
 }
 
@@ -551,7 +551,7 @@ func (c *Config) validate() error {
 			return fmt.Errorf("设备 %q IP 无效", d.Name)
 		}
 		switch d.Mode {
-		case "rule", "global", "direct":
+		case "rule", "global", "direct", "intl":
 		default:
 			return fmt.Errorf("设备 %q mode 无效", d.Name)
 		}

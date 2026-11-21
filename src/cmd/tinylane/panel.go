@@ -915,6 +915,8 @@ func modeCN(m string) string {
 		return "全局直连"
 	case "rule":
 		return "规则分流"
+	case "intl":
+		return "国内直连·国外走"
 	case "follow", "":
 		return "跟随全局"
 	}

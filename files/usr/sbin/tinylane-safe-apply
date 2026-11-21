@@ -1,10 +1,14 @@
 #!/bin/sh
 # 安全试运行：先挂定时回滚，再启动 TinyLane；N 分钟内不确认就自动 `tinylane stop`（回到普通路由），保护 wg0 远程链路。
+# 试运行期间会关掉开机自启（confirm 时恢复），所以这段时间路由器重启也会回到普通路由。
+# 局限：计时器是普通后台进程；路由器卡死不重启、或计时进程被杀时不保证按时回滚。
 #   tinylane-safe-apply [分钟=5] [--openclash]   启动并挂回滚（--openclash：回滚时再启动 OpenClash）
 #   tinylane-safe-apply confirm                  确认，取消回滚
 #   tinylane-safe-apply status
 #   tinylane-safe-apply rollback                 立刻回滚
 PID=/tmp/tinylane-safe.pid
+# 原来是否开机自启：放在 /etc（重启后还在），confirm 时据此恢复
+ENFLAG=/etc/tinylane/.safe-apply-was-enabled
 INIT=${TL_INIT:-/etc/init.d/tinylane}
 NFTSH=${TL_NFTSH:-/usr/libexec/tinylane/tinylane-nft.sh}
 LOG=/tmp/tinylane-safe.log
@@ -19,25 +23,33 @@ do_rollback() {
 		uci -q set openclash.config.enable='1' && uci commit openclash
 		/etc/init.d/openclash start
 	fi
-	log "回滚完成"
+	log "回滚完成（开机自启保持关闭，确认没问题后可 $INIT enable）"
+}
+
+restore_enable() {
+	if [ -f "$ENFLAG" ]; then
+		$INIT enable && log "已恢复开机自启"
+		rm -f "$ENFLAG"
+	fi
 }
 
 timer_alive() { [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null; }
 
 case "$1" in
 confirm)
-	if timer_alive; then kill "$(cat "$PID")"; rm -f "$PID"; log "已确认，自动回滚已取消"; else rm -f "$PID"; echo "没有待确认的回滚"; fi
+	if timer_alive; then kill "$(cat "$PID")"; rm -f "$PID"; log "已确认，自动回滚已取消"; restore_enable; else rm -f "$PID"; echo "没有待确认的回滚"; restore_enable; fi
 	exit 0 ;;
 status)
 	if timer_alive; then echo "回滚计时中（pid $(cat "$PID")），截止 $(cat "$PID.deadline" 2>/dev/null)"; else echo "无回滚计时"; fi
 	tail -n 5 "$LOG" 2>/dev/null; exit 0 ;;
 rollback)
-	timer_alive && kill "$(cat "$PID")"; rm -f "$PID"; do_rollback "$2"; exit 0 ;;
+	timer_alive && kill "$(cat "$PID")"; rm -f "$PID"; do_rollback "$2"; rm -f "$ENFLAG"; exit 0 ;;
 __timer)
 	# 内部：后台计时进程
 	sleep "$2"
 	rm -f "$PID"
 	do_rollback "$3"
+	rm -f "$ENFLAG"
 	exit 0 ;;
 esac
 
@@ -51,6 +63,8 @@ for a in "$@"; do
 done
 timer_alive && { echo "已有回滚计时在跑，先 confirm 或 rollback"; exit 1; }
 SECS=${TL_SECS:-$((MIN * 60))}
+# 先关开机自启：试运行期间断电/重启 = 回到普通路由
+if $INIT enabled 2>/dev/null; then : > "$ENFLAG"; $INIT disable; log "试运行期间已关闭开机自启"; fi
 # 计时器先挂好、脱离当前 SSH 会话（start-stop-daemon -b），再动网络
 SELF=$(command -v "$0" 2>/dev/null); [ -x "$SELF" ] || SELF=/usr/sbin/tinylane-safe-apply
 start-stop-daemon -S -b -m -p "$PID" -x /bin/sh -- "$SELF" __timer "$SECS" "$OC"

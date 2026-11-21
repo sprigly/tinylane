@@ -38,7 +38,7 @@
 
 <p align="center"><sub>Screenshots use demo data. The panel UI is currently Chinese only.</sub></p>
 
-> Early release. The author runs it daily on a Xiaomi AX3000T (OpenWrt 25.12, 256 MB) and keeps updating it; typical footprint is about 35 MB for the core plus 25 MB for the panel daemon. Every change is described in [CHANGELOG.md](CHANGELOG.md) (Chinese) and in the Release notes.
+> Early release. The author runs it daily on a Xiaomi AX3000T (OpenWrt 25.12, 256 MB) and keeps updating it; observed resident memory is about 35 MB for the core and 20–28 MB for the panel daemon, with 77–93 MB of RAM still available (readings from one home router under normal load; not a side-by-side comparison with OpenClash). Every change is described in [CHANGELOG.md](CHANGELOG.md) (Chinese) and in the Release notes.
 
 ## Who it's for
 
@@ -80,7 +80,11 @@ Turning off "Enable proxy" sends every device direct; the router itself keeps wo
 ### 4. Devices
 
 - Auto-discovers LAN devices with type, online / sleeping / offline status, Wi‑Fi signal and today's traffic (direct traffic included).
-- Per-device mode: follow global, global proxy, global direct, or send everything through a group (needs a static IP).
+- Per-device mode (needs a static IP):
+  - follow global / global proxy / global direct;
+  - **China direct, everything else via a group**: China sites and IPs stay direct, the rest goes through the group you pick — e.g. iPhone abroad via a US group, Mac via a Japan group;
+  - **Everything via a group (China included)**.
+  - Your custom rules still take priority over device modes.
 - **Guests**: guest devices can only go direct; optionally treat new devices as guests.
 - **Block** (drop all traffic from a device) and **kick** (disconnect once, or ban from reconnecting for 5 min / 1 h / 24 h).
 - **View connections**: see what a device is connecting to and which line it uses.
@@ -107,7 +111,7 @@ A separate SSID and password; guests get internet but can't see your other devic
 - **Self-protection**: if the proxy core crashes 3 times within 2 minutes, transparent proxying is withdrawn so the whole home goes direct, and it comes back once the core is stable. Panel and core are separate processes, so the panel stays reachable.
 - **Memory protection**: the core is protected first under memory pressure; speed tests are refused when available memory is below 40 MB.
 - **Management traffic always direct**: router-local traffic and remote links such as WireGuard always bypass the proxy, and can be baked into the binary at build time so you can't lock yourself out.
-- **Safe trial run**: start with `tinylane-safe-apply 5` — if you don't run `tinylane-safe-apply confirm` within 5 minutes, it falls back to plain routing. A bad config costs you at most 5 minutes.
+- **Safe trial run**: start with `tinylane-safe-apply 5` — if you don't run `tinylane-safe-apply confirm` within 5 minutes, it falls back to plain routing. Autostart is disabled during the trial (restored on confirm), so a reboot in that window also comes back as a plain router. Limitation: the timer is an ordinary background process; if the router hangs without rebooting, rollback on time isn't guaranteed.
 - **Advanced mode**: edit the raw JSON config with full validation and line-numbered errors; changes roll back automatically if not confirmed within 90 seconds.
 
 ### 9. Panel
@@ -153,6 +157,7 @@ tinylane gen -i /etc/tinylane/tinylane.json -o sb.json --nft t.nft   # generate 
 
 - No IPv6 proxying yet: IPv6 traffic bypasses TinyLane and DNS returns no AAAA records.
 - Connection and device-activity records are in memory and cleared on reboot.
+- Memory figures are the author's own observations; peak usage under sustained load / many connections hasn't been measured, and there is no side-by-side OpenClash comparison yet.
 - Prebuilt binaries are arm64 only.
 - The panel UI is Chinese only for now.
 

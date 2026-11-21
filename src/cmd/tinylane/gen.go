@@ -132,8 +132,15 @@ func buildSingBox(c *Config) (M, error) {
 	// 3. 按设备覆盖（直连）+ 全局直连模式
 	var devDirect []string
 	devGlobal := map[string][]string{}
+	devIntl := map[string][]string{} // 设备=国外走某组：国内照常直连，其余走指定组
 	for _, d := range c.Devices {
 		switch d.Mode {
+		case "intl":
+			g := d.Group
+			if g == "" {
+				g = c.MainGroup
+			}
+			devIntl[g] = append(devIntl[g], d.IP)
 		case "direct":
 			devDirect = append(devDirect, d.IP)
 		case "global":
@@ -177,6 +184,10 @@ func buildSingBox(c *Config) (M, error) {
 		add(M{"inbound": []string{tagMixed}, "action": "resolve", "strategy": "ipv4_only"})
 	}
 	add(M{"rule_set": []string{rsIP}, "outbound": "direct"})
+	// 8. 设备=国外走某组：排在国内直连之后、默认出口之前（nft 层不进 nobypass_src，国内 IP 照常内核直连）
+	for _, g := range sortedKeys(devIntl) {
+		add(M{"source_ip_cidr": devIntl[g], "outbound": g})
+	}
 
 	route := M{
 		"rules":                   rules,
