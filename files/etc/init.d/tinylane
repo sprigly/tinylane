@@ -1,0 +1,68 @@
+#!/bin/sh /etc/rc.common
+# TinyLane（M3；M6 起 stop 也删流量计数表）：gen → check → nft up → daemon（内核看护 + 面板 + 看门狗 + 订阅）；stop：nft down + dnsmasq 上游复原。
+# reload = 守护进程 SIGHUP：重新生成 + sing-box check + 内核热重载（不撤 nft、不重启 dnsmasq，LAN 不断）。
+START=99
+STOP=10
+USE_PROCD=1
+
+PROG=/usr/bin/tinylane
+CONF=/etc/tinylane/tinylane.json
+RUN=/var/run/tinylane
+NFT=/usr/libexec/tinylane/tinylane-nft.sh
+
+log() { logger -t tinylane "$*"; }
+
+dns_takeover() { $NFT dns-on >/dev/null; }
+dns_restore() { [ -f "$RUN/env" ] && . "$RUN/env"; $NFT dns-off >/dev/null; }
+
+start_service() {
+	mkdir -p "$RUN" /tmp/tinylane
+	chmod 700 "$RUN"
+	if ! $PROG gen -i "$CONF" -o "$RUN/config.json" --nft "$RUN/tinylane.nft" --env "$RUN/env" >/dev/null 2>"$RUN/gen.err"; then
+		log "gen 失败：$(cat "$RUN/gen.err")"
+		$NFT down >/dev/null; dns_restore
+		return 1
+	fi
+	. "$RUN/env"
+	if [ "$ENABLED" != 1 ]; then
+		# 总开关关闭：普通路由，但内核和面板照常运行（面板里可以随时打开）
+		log "总开关关闭：普通路由（面板可用）"
+		$NFT down >/dev/null; dns_restore
+	fi
+	# 规则集不存在才同步下载（有旧文件就用旧的，后台每周更新）
+	[ -s "$RULESET_DIR/geosite-cn.srs" ] && [ -s "$RULESET_DIR/geoip-cn.srs" ] || $PROG update-rules -i "$CONF" >/dev/null 2>&1
+	if ! $PROG check -c "$RUN/config.json" >/dev/null 2>"$RUN/check.err"; then
+		log "check 失败：$(cat "$RUN/check.err")"
+		$NFT down >/dev/null; dns_restore
+		return 1
+	fi
+	if [ "$ENABLED" = 1 ]; then
+		$NFT up >/dev/null || { log "nft up 失败"; $NFT down >/dev/null; return 1; }
+		dns_takeover
+	fi
+
+	procd_open_instance tinylane
+	procd_set_param command "$PROG" daemon -i "$CONF" -c "$RUN/config.json" -D /tmp/tinylane
+	procd_set_param respawn 300 5 5
+	procd_set_param limits nofile="16384 16384"
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param pidfile "$RUN/tinylane.pid"
+	procd_close_instance
+}
+
+stop_service() {
+	# 先撤 nft 和 DNS（流量立刻回到普通路由），procd 随后结束进程
+	$NFT down >/dev/null
+	$NFT acct-down >/dev/null
+	dns_restore
+}
+
+service_triggers() {
+	procd_add_reload_trigger "tinylane"
+}
+
+reload_service() {
+	# 热重载：守护进程收到 HUP 后自己 gen + check + SIGHUP 内核；失败保持旧配置（看 logread -e tinylane）
+	procd_send_signal tinylane tinylane HUP
+}

@@ -1,0 +1,19 @@
+# 私密：真实节点 / 订阅 / 密钥 / 路由器副本 / 私有编译参数
+secret/
+*.env
+!test/sample.env
+# 产物
+out/
+web/app.html
+src/cmd/tinylane/webui.html.gz
+# 运维工具（含跳板地址）、笔记、截图（含真实设备名）
+tools/
+NOTES.md
+DEPLOY.md
+shots/
+# 旧版本备份
+src/*-backup-*/
+web/*.m*-backup
+files/m1-backup-*
+*.prev
+*.tmp

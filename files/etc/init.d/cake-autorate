@@ -1,0 +1,12 @@
+#!/bin/sh /etc/rc.common
+# cake-autorate（由 TinyLane 管理：tinylane-sqm.sh up/down 会 start/stop；不单独开机自启，开机由 tinylane 守护进程拉起）
+START=97
+STOP=4
+USE_PROCD=1
+start_service() {
+	[ -f /var/run/tinylane/sqm/config.primary.sh ] || return 0
+	procd_open_instance
+	procd_set_param command /usr/share/cake-autorate/launcher.sh
+	procd_set_param respawn 3600 10 0
+	procd_close_instance
+}

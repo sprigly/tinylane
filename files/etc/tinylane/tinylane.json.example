@@ -1,0 +1,187 @@
+{
+  "enabled": true,
+  "mode": "rule",
+  "main_group": "主线路",
+  "log_level": "warn",
+  "lan": {
+    "iface": "br-lan",
+    "cidr": [
+      "192.168.1.0/24"
+    ]
+  },
+  "tproxy_port": 7893,
+  "mixed_listen": "127.0.0.1:7890",
+  "dns_port": 1053,
+  "clash_api": {
+    "listen": "127.0.0.1:9090",
+    "secret": ""
+  },
+  "always_bypass": {
+    "cidr": [
+      "203.0.113.10/32",
+      "10.0.0.0/24"
+    ],
+    "udp_ports": [
+      51820
+    ]
+  },
+  "guest": {
+    "direct_only": true,
+    "ips": [
+      "192.168.1.200/29"
+    ],
+    "macs": [
+      "aa:bb:cc:dd:ee:ff"
+    ]
+  },
+  "blacklist": {
+    "macs": []
+  },
+  "devices": [
+    {
+      "name": "电视",
+      "ip": "192.168.1.50",
+      "mode": "global"
+    },
+    {
+      "name": "NAS",
+      "ip": "192.168.1.60",
+      "mode": "direct"
+    }
+  ],
+  "dns": {
+    "cn": [
+      "223.5.5.5"
+    ],
+    "foreign": [
+      "https://1.1.1.1/dns-query"
+    ],
+    "fallback": [
+      "223.5.5.5",
+      "119.29.29.29"
+    ]
+  },
+  "rulesets": {
+    "dir": "/etc/tinylane/ruleset",
+    "update_days": 7
+  },
+  "hy2_mtu_fix": {
+    "initial_packet_size": 1200,
+    "disable_path_mtu_discovery": true
+  },
+  "find_neighbor": true,
+  "rules": [
+    {
+      "name": "示例：这些网站只走指定出口",
+      "domain_suffix": [
+        "example.com",
+        "example.org"
+      ],
+      "outbound": "指定出口",
+      "pin": true
+    },
+    {
+      "name": "示例：bilibili 直连",
+      "domain_suffix": [
+        "bilibili.com"
+      ],
+      "outbound": "direct"
+    },
+    {
+      "name": "测速/探测专用（看门狗 M2 也用）",
+      "domain": [
+        "speed.cloudflare.com"
+      ],
+      "outbound": "测速"
+    }
+  ],
+  "nodes": [
+    {
+      "name": "hy2 节点A",
+      "source": "manual",
+      "outbound": {
+        "type": "hysteria2",
+        "server": "a.example.com",
+        "server_port": 4433,
+        "password": "CHANGE-ME",
+        "obfs": {
+          "type": "salamander",
+          "password": "CHANGE-ME"
+        },
+        "tls": {
+          "enabled": true,
+          "server_name": "a.example.com"
+        }
+      }
+    },
+    {
+      "name": "vless 节点B",
+      "source": "manual",
+      "outbound": {
+        "type": "vless",
+        "server": "b.example.com",
+        "server_port": 443,
+        "uuid": "00000000-0000-0000-0000-000000000000",
+        "tls": {
+          "enabled": true,
+          "server_name": "b.example.com",
+          "utls": {
+            "enabled": true,
+            "fingerprint": "chrome"
+          }
+        },
+        "transport": {
+          "type": "ws",
+          "path": "/ws",
+          "headers": {
+            "Host": "b.example.com"
+          }
+        }
+      }
+    },
+    {
+      "name": "hy2 节点B",
+      "source": "manual",
+      "outbound": {
+        "type": "hysteria2",
+        "server": "b.example.com",
+        "server_port": 4433,
+        "password": "CHANGE-ME",
+        "tls": {
+          "enabled": true,
+          "server_name": "b.example.com"
+        }
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "主线路",
+      "type": "select",
+      "members": [
+        "hy2 节点A",
+        "vless 节点B",
+        "hy2 节点B"
+      ]
+    },
+    {
+      "name": "指定出口",
+      "type": "select",
+      "members": [
+        "vless 节点B",
+        "hy2 节点B"
+      ],
+      "strict": true,
+      "label": "指定出口（示例）"
+    },
+    {
+      "name": "测速",
+      "type": "select",
+      "members": [
+        "hy2 节点A",
+        "vless 节点B",
+        "hy2 节点B"
+      ]
+    }
+  ]
+}

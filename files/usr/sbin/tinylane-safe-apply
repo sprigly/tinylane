@@ -1,0 +1,64 @@
+#!/bin/sh
+# 死人开关：先挂定时回滚，再启动 TinyLane；N 分钟内不确认就自动 `tinylane stop`（回到普通路由），保护 wg0 远程链路。
+#   tinylane-safe-apply [分钟=5] [--openclash]   启动并挂回滚（--openclash：回滚时再启动 OpenClash）
+#   tinylane-safe-apply confirm                  确认，取消回滚
+#   tinylane-safe-apply status
+#   tinylane-safe-apply rollback                 立刻回滚
+PID=/tmp/tinylane-safe.pid
+INIT=${TL_INIT:-/etc/init.d/tinylane}
+NFTSH=${TL_NFTSH:-/usr/libexec/tinylane/tinylane-nft.sh}
+LOG=/tmp/tinylane-safe.log
+log() { logger -t tinylane-safe "$*"; echo "$(date '+%F %T') $*" >> "$LOG"; echo "$*"; }
+
+do_rollback() {
+	log "回滚：停止 TinyLane"
+	$INIT stop
+	$NFTSH down >/dev/null 2>&1
+	if [ "$1" = 1 ]; then
+		log "回滚：启动 OpenClash"
+		uci -q set openclash.config.enable='1' && uci commit openclash
+		/etc/init.d/openclash start
+	fi
+	log "回滚完成"
+}
+
+timer_alive() { [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null; }
+
+case "$1" in
+confirm)
+	if timer_alive; then kill "$(cat "$PID")"; rm -f "$PID"; log "已确认，自动回滚已取消"; else rm -f "$PID"; echo "没有待确认的回滚"; fi
+	exit 0 ;;
+status)
+	if timer_alive; then echo "回滚计时中（pid $(cat "$PID")），截止 $(cat "$PID.deadline" 2>/dev/null)"; else echo "无回滚计时"; fi
+	tail -n 5 "$LOG" 2>/dev/null; exit 0 ;;
+rollback)
+	timer_alive && kill "$(cat "$PID")"; rm -f "$PID"; do_rollback "$2"; exit 0 ;;
+__timer)
+	# 内部：后台计时进程
+	sleep "$2"
+	rm -f "$PID"
+	do_rollback "$3"
+	exit 0 ;;
+esac
+
+MIN=5; OC=0
+for a in "$@"; do
+	case "$a" in
+	--openclash) OC=1 ;;
+	*[!0-9]*) echo "未知参数 $a"; exit 2 ;;
+	*) MIN=$a ;;
+	esac
+done
+timer_alive && { echo "已有回滚计时在跑，先 confirm 或 rollback"; exit 1; }
+SECS=${TL_SECS:-$((MIN * 60))}
+# 计时器先挂好、脱离当前 SSH 会话（start-stop-daemon -b），再动网络
+SELF=$(command -v "$0" 2>/dev/null); [ -x "$SELF" ] || SELF=/usr/sbin/tinylane-safe-apply
+start-stop-daemon -S -b -m -p "$PID" -x /bin/sh -- "$SELF" __timer "$SECS" "$OC"
+sleep 1
+timer_alive || { echo "回滚计时器没起来，放弃启动"; exit 1; }
+date -d "@$(( $(date +%s) + SECS ))" '+%F %T' > "$PID.deadline" 2>/dev/null
+log "已挂自动回滚：${MIN} 分钟后执行（openclash=$OC）。确认无误请运行：tinylane-safe-apply confirm"
+$INIT restart
+sleep 3
+$INIT status 2>/dev/null
+$NFTSH status

@@ -1,0 +1,11 @@
+{
+	"luci-app-tinylane": {
+		"description": "TinyLane panel (embedded from :9999, uses this LuCI session)",
+		"read": {
+			"uci": [ "tinylane" ]
+		},
+		"write": {
+			"uci": [ "tinylane" ]
+		}
+	}
+}
