@@ -1,3 +1,5 @@
+<p align="right"><b>简体中文</b> · <a href="README.en.md">English</a></p>
+
 <p align="center">
   <img src="docs/logo.png" width="140" alt="TinyLane">
 </p>
@@ -27,16 +29,13 @@
   <a href="CHANGELOG.md">更新记录</a>
 </p>
 
-<p align="center">
-  <img src="docs/screenshots/overview.png" width="230" alt="概览">
-  <img src="docs/screenshots/nodes.png" width="230" alt="节点与分组">
-  <img src="docs/screenshots/devices.png" width="230" alt="设备">
-</p>
-<p align="center">
-  <img src="docs/screenshots/subscriptions.png" width="230" alt="订阅">
-  <img src="docs/screenshots/rules.png" width="230" alt="规则">
-  <img src="docs/screenshots/settings.png" width="230" alt="设置">
-</p>
+<p align="center"><img src="docs/screenshots/preview-1.png" width="720" alt="概览 · 节点 · 设备"></p>
+
+<details>
+<summary>更多截图（订阅 · 规则 · 设置）</summary>
+<p align="center"><img src="docs/screenshots/preview-2.png" width="720" alt="订阅 · 规则 · 设置"></p>
+</details>
+
 <p align="center"><sub>截图为演示数据</sub></p>
 
 > 早期版本，作者在小米 AX3000T（OpenWrt 25.12，256 MB）上每天自用并持续更新，日常占用约 35 MB 内核 + 25 MB 面板。每次更新的改动写在 [CHANGELOG.md](CHANGELOG.md) 和 Release 说明里。
