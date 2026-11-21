@@ -28,7 +28,7 @@ import (
 	"github.com/sagernet/sing/service"
 )
 
-const tlVersion = "0.4.3-m7b"
+const tlVersion = "0.4.4"
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `tinylane %s (sing-box %s)
