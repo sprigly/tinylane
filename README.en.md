@@ -142,6 +142,8 @@ A separate SSID and password; guests get internet but can't see your other devic
    ```
 6. Open `http://<router IP>:9999`.
 
+**Updating later** (from 0.4.5 on): panel → Rules & Settings → Settings → "Update" → Check for updates, then "Update now". The router first verifies the official signature in the Release (`SHA256SUMS-arm64.txt.sig`), swaps in the new binary and runs a 3-minute self-check; if anything fails it rolls back automatically. Auto-update is off by default; when on, it only installs stable releases at 4:00 AM. Going from 0.4.4 or earlier to 0.4.5 needs one manual binary swap (step 2).
+
 **Uninstall**: `/etc/init.d/tinylane disable && /etc/init.d/tinylane stop`, then delete `/usr/bin/tinylane`, `/etc/tinylane/` and the files from step 3. The router returns to plain routing.
 
 ## Commands
@@ -164,14 +166,26 @@ tinylane gen -i /etc/tinylane/tinylane.json -o sb.json --nft t.nft   # generate 
 ## Building
 
 ```sh
-# requires Go 1.25+ and sing-box v1.14.4 source
+# requires Go 1.25+ (releases use 1.27.4) and sing-box v1.14.4 source
 git clone --depth 1 --branch v1.14.4 https://github.com/SagerNet/sing-box.git /tmp/sing-box
 SB=/tmp/sing-box OUT=out/tinylane-linux-arm64 GOARCH=arm64 sh build.sh
 # optional: bake management links into the binary (comma-separated)
 TL_BUILTIN_BYPASS=203.0.113.10/32,10.0.0.0/24 SB=/tmp/sing-box sh build.sh
 ```
 
-Build tags: `with_quic,with_clash_api,with_gvisor,with_utls`. Publishing a Release triggers GitHub Actions to build and attach the binary (`.github/workflows/release.yml`).
+Build tags: `with_quic,with_clash_api,with_gvisor,with_utls`.
+
+**Reproducible builds**: releases are built with Go 1.27.4, `CGO_ENABLED=0 -trimpath -buildvcs=false` and fixed `-ldflags`; dependencies are pinned by sing-box's `go.sum`. Anyone can rebuild a byte-identical binary:
+
+```sh
+git clone --depth 1 --branch v1.14.4 https://github.com/SagerNet/sing-box.git /tmp/sing-box
+V=0.4.5; mkdir -p dist
+TL_RELEASE=1 SB=/tmp/sing-box OUT=dist/tinylane-$V-linux-arm64 GOARCH=arm64 sh build.sh
+gzip -9 -n -k dist/tinylane-$V-linux-arm64
+(cd dist && sha256sum tinylane-* | diff - ../release-sigs/v$V/SHA256SUMS-arm64.txt && echo identical)
+```
+
+`release-sigs/v<version>/` holds the author-signed SHA256SUMS and its signature. When a Release is published, GitHub Actions builds the same way; the outputs are attached only if their sha256 match the signed list exactly, otherwise the workflow fails (`.github/workflows/release.yml`).
 
 ## Layout
 

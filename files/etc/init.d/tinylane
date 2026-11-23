@@ -16,6 +16,9 @@ dns_takeover() { $NFT dns-on >/dev/null; }
 dns_restore() { [ -f "$RUN/env" ] && . "$RUN/env"; $NFT dns-off >/dev/null; }
 
 start_service() {
+	# M11：自更新换版中途断电（程序缺失 / 不完整）→ 先用保存的上一版补回；正常情况什么都不做
+	UPD=/usr/libexec/tinylane/tinylane-update.sh
+	[ -f /etc/tinylane/.update-trial ] && [ -z "$TL_UPD_HELPER" ] && [ -f "$UPD" ] && sh "$UPD" boot /etc/tinylane/.update-trial
 	mkdir -p "$RUN" /tmp/tinylane
 	chmod 700 "$RUN"
 	if ! $PROG gen -i "$CONF" -o "$RUN/config.json" --nft "$RUN/tinylane.nft" --env "$RUN/env" >/dev/null 2>"$RUN/gen.err"; then

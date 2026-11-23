@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	runtimeDebug "runtime/debug"
 	"sync"
 	"syscall"
@@ -28,7 +29,7 @@ import (
 	"github.com/sagernet/sing/service"
 )
 
-const tlVersion = "0.4.4"
+const tlVersion = "0.4.5"
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `tinylane %s (sing-box %s)
@@ -145,7 +146,7 @@ func cmdRun(args []string, checkOnly bool) error {
 		}
 		// 256 MB 路由器：更积极地 GC
 		runtimeDebug.SetGCPercent(50)
-		runtimeDebug.SetMemoryLimit(96 << 20)
+		startMemLimitWatch(filepath.Dir(*cfg)) // M9：上限来自设置（runDir/memlimit），缺省 40 MB
 		rdnsOnce.Do(func() { startRdns() }) // M6d：DNS 反查表（SIGHUP 重载时保留）
 		if err := instance.Start(); err != nil {
 			instance.Close()

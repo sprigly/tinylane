@@ -142,6 +142,8 @@
    ```
 6. 打开 `http://<路由器 IP>:9999`。
 
+**以后更新**（0.4.5 起）：面板 → 规则与设置 → 设置 →「更新」→ 检查更新，有新版点「立即更新」即可。路由器会先验证 Release 里的官方签名（`SHA256SUMS-arm64.txt.sig`），再换新版并自检 3 分钟，没通过自动退回旧版。自动更新默认关闭，打开后只在凌晨 4:00 更新正式版。从 0.4.4 或更早版本升到 0.4.5 需要按第 2 步手动换一次程序。
+
 **卸载**：`/etc/init.d/tinylane disable && /etc/init.d/tinylane stop`，删除 `/usr/bin/tinylane`、`/etc/tinylane/` 和第 3 步复制的文件即可，路由器会回到普通路由。
 
 ## 常用命令
@@ -163,14 +165,26 @@ tinylane gen -i /etc/tinylane/tinylane.json -o sb.json --nft t.nft   # 只生成
 ## 自己编译
 
 ```sh
-# 需要 Go 1.25+ 和 sing-box v1.14.4 源码
+# 需要 Go 1.25+（发布版用 1.27.4） 和 sing-box v1.14.4 源码
 git clone --depth 1 --branch v1.14.4 https://github.com/SagerNet/sing-box.git /tmp/sing-box
 SB=/tmp/sing-box OUT=out/tinylane-linux-arm64 GOARCH=arm64 sh build.sh
 # 可选：把远程管理链路写死进二进制（逗号分隔）
 TL_BUILTIN_BYPASS=203.0.113.10/32,10.0.0.0/24 SB=/tmp/sing-box sh build.sh
 ```
 
-编译标签：`with_quic,with_clash_api,with_gvisor,with_utls`。发布 Release 时 GitHub Actions 会自动编译并附上二进制（`.github/workflows/release.yml`）。
+编译标签：`with_quic,with_clash_api,with_gvisor,with_utls`。
+
+**可复现构建**：发布版用 Go 1.27.4、`CGO_ENABLED=0 -trimpath -buildvcs=false`、固定 `-ldflags`，依赖由 sing-box 的 `go.sum` 锁定，任何人按下面的方式都能编出逐字节相同的程序：
+
+```sh
+git clone --depth 1 --branch v1.14.4 https://github.com/SagerNet/sing-box.git /tmp/sing-box
+V=0.4.5; mkdir -p dist
+TL_RELEASE=1 SB=/tmp/sing-box OUT=dist/tinylane-$V-linux-arm64 GOARCH=arm64 sh build.sh
+gzip -9 -n -k dist/tinylane-$V-linux-arm64
+(cd dist && sha256sum tinylane-* | diff - ../release-sigs/v$V/SHA256SUMS-arm64.txt && echo 一致)
+```
+
+`release-sigs/v<版本>/` 里是作者签过名的 SHA256SUMS 和签名。发布 Release 时 GitHub Actions 按同样方式编译，产物的 sha256 必须和这份签名清单完全一致才会附到 Release，不一致工作流直接失败（`.github/workflows/release.yml`）。
 
 ## 目录
 

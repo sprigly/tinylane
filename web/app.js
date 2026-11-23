@@ -66,7 +66,7 @@ function outTag(o){return o=='direct'||o=='直连'?'<span class="tag t-dir">直�
 function nav(){
  const h=TABS.map(([k,n])=>`<button data-t="${k}" class="${S.tab==k?'on':''}">${svg(k)}<span>${n}</span></button>`).join('');
  $('#tb').innerHTML=h;$('#side').innerHTML='<div class="logo"><i></i>TinyLane</div>'+TABS.map(([k,n])=>`<button data-t="${k}" class="${S.tab==k?'on':''}">${svg(k)}${k=='st'?'规则与设置':n}</button>`).join('');
- document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{S.tab=LS.tl_tab=b.dataset.t;nav();render();scrollTo(0,0);if(['ov','dv','lg'].includes(S.tab))loadConns()});
+ document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{S.tab=LS.tl_tab=b.dataset.t;S.ic=null;nav();render();scrollTo(0,0);upDot(S.st&&S.st.update&&S.st.update.dot);if(S.tab=='ov'&&!S.mh){S.mhAt=0;loadMH().then(()=>S.tab=='ov'&&render())}if(['ov','dv','lg'].includes(S.tab))loadConns()});
 }
 function head(){const st=S.st;if(!st)return;const p=$('#mpill');
  p.textContent=st.fallback?'内核异常·直连':st.enabled?MODES[st.mode]:'已停用';p.className='pill'+(st.enabled&&!st.fallback?'':' off');
@@ -74,7 +74,8 @@ function head(){const st=S.st;if(!st)return;const p=$('#mpill');
 function chart(){const W=300,H=90,pts=S.lv.traffic.slice(-60);if(pts.length<2)return`<div class="mut" style="height:90px;display:grid;place-items:center;font-size:12px">等待流量数据…</div>`;
  const mx=Math.max(1024,...pts.map(p=>Math.max(p[0],p[1])))*1.15,n=pts.length-1;
  const pt=k=>pts.map((p,i)=>`${(i/n*W).toFixed(1)},${(H-p[k]/mx*H).toFixed(1)}`).join(' ');
- return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" style="stop-color:var(--acc);stop-opacity:.35"/><stop offset="1" style="stop-color:var(--acc);stop-opacity:0"/></linearGradient></defs><polygon fill="url(#g)" points="0,${H} ${pt(1)} ${W},${H}"/><polyline fill="none" style="stroke:var(--acc)" stroke-width="1.8" points="${pt(1)}" vector-effect="non-scaling-stroke"/><polyline fill="none" stroke="#a78bfa" stroke-width="1.5" points="${pt(0)}" vector-effect="non-scaling-stroke"/></svg>`}
+ ICD.tr={n:pts.length,x:i=>i/n,row:i=>{const p=pts[i],t=new Date(Date.now()-(n-i)*1e3);return `<b>${t.toLocaleTimeString('zh-CN',{...tz,hour:'2-digit',minute:'2-digit',second:'2-digit'})}</b><br>↓ ${fmtR(p[1])}<br>↑ ${fmtR(p[0])}`}};
+ return ichW('tr',`<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" style="stop-color:var(--acc);stop-opacity:.35"/><stop offset="1" style="stop-color:var(--acc);stop-opacity:0"/></linearGradient></defs><polygon fill="url(#g)" points="0,${H} ${pt(1)} ${W},${H}"/><polyline fill="none" style="stroke:var(--acc)" stroke-width="1.8" points="${pt(1)}" vector-effect="non-scaling-stroke"/><polyline fill="none" stroke="#a78bfa" stroke-width="1.5" points="${pt(0)}" vector-effect="non-scaling-stroke"/></svg>`)}
 const V={};
 function grp(n){return (S.st?.groups||[]).find(g=>g.name==n)}
 function evList(n){const ev=(S.st?.events||[]).slice(0,n);return ev.length?ev.map(e=>`<div class="ev"><time>${tfmt(e.t)}</time><div class="${e.kind=='error'?'chg':''}">${esc(relab(e.msg))}</div></div>`).join(''):'<p class="mut">暂无事件</p>'}
@@ -91,6 +92,7 @@ ${st.enabled?'':'<div class="banner">代理已停用，所有设备直连上网�
 <div class="mut" style="font-size:12px;margin-top:8px">${g?.type=='failover'?(g.hold_until*1e3>Date.now()?'手动锁定中 · '+tfmt(g.hold_until)+' 恢复自动':'自动切换 · '+ago(g.last_check)+'检测'):'手动选择'}${g?.note?' · '+esc(g.note):''}</div></div>
 <div class="card"><h3>实时流量 <span class="sp"></span><span class="mut" style="font-size:11.5px;font-weight:400"><span style="color:var(--acc)">━</span> 下行 <span style="color:#a78bfa">━</span> 上行</span></h3><div id="chart">${chart()}</div></div></div>
 <div class="grid"><div class="tile"><small>在线设备</small><b>${on}</b></div><div class="tile"><small>今日流量</small><b>${st.traffic?.ok?fmtB(st.traffic.today_down+st.traffic.today_up):cx?fmtB(cx.down_total+cx.up_total):'…'}</b><small>${st.traffic?.ok?'↓ '+fmtB(st.traffic.today_down)+' · ↑ '+fmtB(st.traffic.today_up):cx?'启动以来 ↓ '+fmtB(cx.down_total):''}</small></div><div class="tile"><small>当前连接</small><b>${cx?cx.total:'…'}</b></div><div class="tile"><small>${esc(mg?gl(mg):'第二组')} 线路</small><b style="font-size:15px;margin-top:6px;overflow-wrap:anywhere">${esc(mg?.now||'—')}</b></div></div>
+${mhCard()}
 <div class="card"><h3>最近事件</h3>${evList(8)}</div>`};
 function lat(h){const stale=!h.delay&&h.delay_at&&h.last_ok&&h.fail_streak<2&&h.delay_at-h.last_ok_at<900;if(stale)return `<div class="num lat-stale" title="刚才一次测试失败，显示上次成功的值">${h.last_ok} ms</div>`;const bad=h.delay_at&&(!h.delay||h.fail_streak>0),c=!h.delay_at?'lat-n':bad?'lat-bad':h.heavy_ok===false?'lat-warn':'lat-ok';return `<div class="num ${c}">${h.delay?h.delay+' ms':h.delay_at?'超时':'未测'}</div>`}
 function lockTag(g){return g.strict?'<span class="tag t-blk" title="组里没有可用节点时断网，不回落直连">🔒 断网保护</span>':''}
@@ -175,19 +177,20 @@ function optCard(){const o=S.st.optimize;if(!o)return'';const q=o.sqm,nf=(k,l)=>
  return `<div class="card"><h3>国内直连优化</h3>
 <div class="set"><div>国内 IP 内核直连<div class="mut" style="font-size:11.5px">规则模式下国内网站不进代理内核，直接由路由器转发：更快、更省 CPU（共 ${o.cn4_count} 个网段；全局代理时自动关闭）</div></div><div class="sw sm ${o.kernel_cn_bypass?'on':''}" id="o_by"></div></div>
 <div class="set"><div>记录内核直连<div class="mut" style="font-size:11.5px">把绕过代理内核的国内连接也显示在日志和设备里（标「内核直连」，每 5 秒读一次连接表；${o.kern?`当前 ${o.kern.active} 条活动、${o.kern.ended} 条最近结束`:'未运行'}${o.kern&&o.kern.skipped?'，连接表过大已暂停':''}）</div></div><div class="sw sm ${o.kernel_conn_log?'on':''}" id="o_kl"></div></div>
+<div class="set"><div>内核内存上限<div class="mut" style="font-size:11.5px">代理内核的 Go 内存快到这个数就提前回收、尽快还给系统（软上限：超了不杀进程、不断网，只是回收更勤、大流量时 CPU 略高）。不含程序文件本身约 23 MB。范围 ${MLMIN}–${MLMAX}，填 0 关闭。改了立即生效，不重启内核。</div></div><div class="trail"><input type="number" inputmode="numeric" min="0" max="${MLMAX}" id="o_ml" value="${o.core_mem_limit_mb??40}" style="width:72px;text-align:right"><span class="mut">MB</span></div></div>
 <div class="set"><div>直连连接超时<div class="mut" style="font-size:11.5px">线路偶尔丢包时多等一会儿再放弃，避免网页「转圈 5 秒后失败」</div></div><div class="trail"><input type="number" inputmode="numeric" min="1" max="120" id="o_to" value="${o.direct_connect_timeout_s}" style="width:72px;text-align:right"><span class="mut">秒</span></div></div>
 <div class="set"><div>智能限速（cake-autorate）<div class="mut" style="font-size:11.5px">把排队放在本路由器上并按延迟自动调速：下载跑满时打游戏、开网页不卡${o.sqm_available?'':'（未安装）'}</div></div><div class="sw sm ${q.enabled?'on':''}" id="o_sq"></div></div>
 <div id="o_rates" style="${q.enabled?'':'display:none'}"><p class="mut" style="font-size:11.5px;margin:4px 0 8px">单位 Mbit/s。「最低」是最差时的保底，「常用」是平时的速度，「最高」不超过宽带实测。</p>
 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">${nf('dl_min','下行 最低')}${nf('dl_base','下行 常用')}${nf('dl_max','下行 最高')}${nf('ul_min','上行 最低')}${nf('ul_base','上行 常用')}${nf('ul_max','上行 最高')}</div>
 <p class="mut" id="o_ms" style="font-size:11.5px"></p></div>
 <div class="btns"><button class="btn pri" id="o_save">保存</button><button class="btn" id="o_meas">自动测速并填入建议值</button></div></div>`}
-function setView(){const st=S.st,w=st.watchdog,b=st.basic,ro=v=>`<span class="rov">${esc(v)}</span>`;return rawBanner()+optCard()+`${guestCard()}<div class="cols"><div class="card"><h3>基础 <span class="tag">只读</span></h3><div class="set">局域网接口${ro(b.lan_iface)}</div><div class="set">透明代理端口${ro(b.tproxy_port)}</div><div class="set">测试代理${ro(b.mixed||'关闭')}</div><div class="set">IPv6 代理${ro('暂不支持')}</div></div>
+function setView(){const st=S.st,w=st.watchdog,b=st.basic,ro=v=>`<span class="rov">${esc(v)}</span>`;return rawBanner()+optCard()+autoCard()+`${guestCard()}<div class="cols"><div class="card"><h3>基础 <span class="tag">只读</span></h3><div class="set">局域网接口${ro(b.lan_iface)}</div><div class="set">透明代理端口${ro(b.tproxy_port)}</div><div class="set">测试代理${ro(b.mixed||'关闭')}</div><div class="set">IPv6 代理${ro('暂不支持')}</div></div>
 <div class="card"><h3>DNS <span class="tag">只读</span></h3><div class="set">国内上游${ro(b.dns_cn.join(', '))}</div><div class="set">国外上游${ro(b.dns_foreign.join(', '))}</div><p class="mut" style="font-size:11.5px">经 dnsmasq（127.0.0.1#1053）接入；AAAA 回空。</p></div>
-<div class="card"><h3>自动切换（看门狗）<span class="tag">只读</span></h3><div class="set">延迟检测${ro('每 '+w.interval_s+' 秒')}</div><div class="set">吞吐检测${ro('每 '+Math.round(w.heavy_interval_s/60)+' 分钟')}</div><div class="set">切走 / 切回${ro('连续失败 '+w.fail+' 次 / 连续正常 '+w.recover+' 次')}</div><div class="set">吞吐下限${ro('↓'+w.min_down_kbps+' ↑'+w.min_up_kbps+' KB/s')}</div><div class="set">手动选择后暂停${ro(w.hold_minutes+' 分钟')}</div></div>
+<div class="card"><h3>看门狗基础参数 <span class="tag">只读</span></h3><div class="set">延迟检测${ro('每 '+w.interval_s+' 秒')}</div><div class="set">吞吐检测${ro('每 '+Math.round(w.heavy_interval_s/60)+' 分钟')}</div><div class="set">切走 / 切回${ro('连续失败 '+w.fail+' 次 / 连续正常 '+w.recover+' 次')}</div><div class="set">吞吐下限${ro('↓'+w.min_down_kbps+' ↑'+w.min_up_kbps+' KB/s')}</div><div class="set">手动选择后暂停${ro(w.hold_minutes+' 分钟')}</div></div>
 <div class="card"><h3>面板与备份</h3><div class="set">面板登录<span class="mut" style="font-size:12px;text-align:right">与 LuCI 相同（root 密码 / LuCI 会话）<br><a href="//${location.hostname}/cgi-bin/luci/admin/system/admin" target="_top" style="color:var(--ac)">在 LuCI 修改 root 密码</a></span></div><div class="set">外观<div class="seg"><button data-th="auto" class="${S.theme=='auto'?'on':''}">自动</button><button data-th="light" class="${S.theme=='light'?'on':''}">浅色</button><button data-th="dark" class="${S.theme=='dark'?'on':''}">深色</button></div></div><div class="set">强调色<div class="seg"><button data-ac="blue" class="${S.accent!='teal'?'on':''}">蓝色</button><button data-ac="teal" class="${S.accent=='teal'?'on':''}">青色</button></div></div><div class="set">配置<div class="trail"><a class="btn" href="/api/export" download>导出 JSON</a><button class="btn" data-a="import">导入…</button></div></div><div class="set">登录<button class="btn" data-a="logout">退出登录</button></div></div>
-<div class="card"><h3>系统</h3><div class="kv"><div><span>版本</span>${esc(st.version)}</div><div><span>内核内存</span>${fmtB(st.rss.core)}</div><div><span>面板+看门狗</span>${fmtB(st.rss.daemon)}</div><div><span>内核状态</span>${st.core_up?'运行中':'未响应'}</div><div><span>内核重启</span>${st.core_restarts} 次</div><div><span>自保状态</span>${st.fallback?'直连中':'正常'}</div></div></div></div>
+${updCard()}<div class="card"><h3>系统</h3><div class="kv"><div><span>版本</span>${esc(st.version)}</div><div><span>内核内存</span>${fmtB(st.rss.core)}</div><div><span>面板+看门狗</span>${fmtB(st.rss.daemon)}</div><div><span>内核状态</span>${st.core_up?'运行中':'未响应'}</div><div><span>内核重启</span>${st.core_restarts} 次</div><div><span>自保状态</span>${st.fallback?'直连中':'正常'}</div></div><p class="mut" style="font-size:11.5px;margin-top:8px">内存曲线和节点延迟曲线在「概览」页。</p></div></div>
 <div class="card"><h3>高级模式</h3><div class="set"><div>原始配置<div class="mut sm2">查看 / 编辑 TinyLane JSON（含生成的 sing-box 配置只读视图）。保存前完整校验，应用后 90 秒内不确认自动回滚。</div></div><button class="btn" data-a="raw">打开</button></div></div>`}
-function render(){if(!S.st||S.dragging)return;const v=$('#view');if(v.dataset.tab!==S.tab||!v.firstChild){v.innerHTML=V[S.tab]();v.dataset.tab=S.tab}else patch(v,V[S.tab]());head();bind();initDrag()}
+function render(){if(!S.st||S.dragging)return;const v=$('#view');if(v.dataset.tab!==S.tab||!v.firstChild){v.innerHTML=V[S.tab]();v.dataset.tab=S.tab}else patch(v,V[S.tab]());head();bind();initDrag();icRe()}
 function bind(){
  const on=(sel,fn)=>document.querySelectorAll('#view '+sel+',.sheet '+sel).forEach(e=>e.onclick=ev=>{ev.stopPropagation();fn(e,ev)});
  const st=S.st;
@@ -238,8 +241,10 @@ function bind(){
  on('[data-a=rsupd]',e=>act('/rulesets/update',{},'规则集已更新',e));
  const ob=$('#o_by'),oq=$('#o_sq');if(ob){const card=ob.closest('.card');card.oninput=()=>S.optEdit=1;ob.onclick=()=>{S.optEdit=1;ob.classList.toggle('on')};const okl=$('#o_kl');if(okl)okl.onclick=()=>{S.optEdit=1;okl.classList.toggle('on')};oq.onclick=()=>{S.optEdit=1;oq.classList.toggle('on');$('#o_rates').style.display=oq.classList.contains('on')?'':'none'};
   const K=['dl_min','dl_base','dl_max','ul_min','ul_base','ul_max'];
-  $('#o_save').onclick=e=>{const q={enabled:oq.classList.contains('on'),iface:st.optimize.sqm.iface};K.forEach(k=>q[k]=+$('#q_'+k).value);S.optEdit=0;act('/optimize',{sqm:q,kernel_cn_bypass:ob.classList.contains('on'),direct_connect_timeout_s:+$('#o_to').value,...($('#o_kl')?{kernel_conn_log:$('#o_kl').classList.contains('on')}:{})},'已保存',e.target)};
+  $('#o_save').onclick=e=>{const q={enabled:oq.classList.contains('on'),iface:st.optimize.sqm.iface};K.forEach(k=>q[k]=+$('#q_'+k).value);S.optEdit=0;act('/optimize',{sqm:q,kernel_cn_bypass:ob.classList.contains('on'),direct_connect_timeout_s:+$('#o_to').value,...($('#o_ml')?{core_mem_limit_mb:+$('#o_ml').value}:{}),...($('#o_kl')?{kernel_conn_log:$('#o_kl').classList.contains('on')}:{})},'已保存',e.target)};
   $('#o_meas').onclick=async e=>{S.optEdit=1;$('#o_rates').style.display='';$('#o_ms').textContent='测速中（约 30 秒，期间网速会被占满）…';const b=e.target;b.disabled=true;let r=null,em='';try{r=await A('/optimize/measure',{})}catch(x){em=x.message;toast('✗ '+em,1)}b.disabled=false;if(r&&r.suggest){K.forEach(k=>$('#q_'+k).value=r.suggest[k]);$('#o_ms').textContent=`实测 ↓${r.down_mbit} ↑${r.up_mbit} Mbit/s，已填入建议值（常用 = 实测 85%），确认后点「保存」。`}else $('#o_ms').textContent=em&&em.includes('内存')?'✗ '+em:'测速失败，请稍后再试'}}
+ const as=$('#a_save');if(as){const card=as.closest('.card');card.oninput=()=>S.optEdit=1;card.querySelectorAll('.sw[data-asw]').forEach(x=>x.onclick=()=>{S.optEdit=1;x.classList.toggle('on')});
+  as.onclick=e=>{const on=k=>card.querySelector(`[data-asw=${k}]`).classList.contains('on'),v=k=>+$('#a_'+k).value;S.optEdit=0;act('/watchdog/auto',{fast_switch:on('fs'),fast_retest_s:v('rt'),fast_window_s:v('wd'),core_err_kick:on('ck'),core_err_count:v('cn'),probe_backup:on('pb'),switch_back_min:v('bm')},'已保存',e.target)}}
  on('[data-gd]',()=>act('/guest',{direct_only:!st.guest.direct_only},st.guest.direct_only?'已取消访客直连限制':'访客已限制为仅直连'));
  on('[data-th]',e=>{theme(e.dataset.th);render()});
  on('[data-ac]',e=>{accent(e.dataset.ac);render()});
@@ -247,7 +252,7 @@ function bind(){
  on('[data-a=logout]',()=>A('/logout',{}).finally(()=>location.reload()));
  const q=$('#fq');if(q)q.oninput=()=>{S.q=q.value;upLog(true)};
  const hd=$('#hd');if(hd)hd.onchange=()=>{S.hip=hd.value;loadHist()};const hq=$('#hq');if(hq)hq.oninput=()=>{S.hq=hq.value;clearTimeout(S.hqt);S.hqt=setTimeout(loadHist,400)};
- bindM6();
+ bindM6();bindM11();
 }
 function bind2(){document.querySelectorAll('[data-qr]').forEach(e=>e.onclick=ev=>{ev.stopPropagation();quickRule(e.dataset.qr)})}
 function confirmSheet(t,msg,fn){sheet(`<h3>${esc(t)}</h3><p class="mut">${esc(msg)}</p><div class="btns"><button class="btn pri dan" id="cb">确定</button><button class="btn" id="cn">取消</button></div>`,m=>{m.querySelector('#cb').onclick=()=>{m.remove();fn()};m.querySelector('#cn').onclick=()=>m.remove()})}
@@ -330,9 +335,65 @@ MQ.addEventListener&&MQ.addEventListener('change',()=>{if(S.theme=='auto'){theme
 function accent(a){S.accent=LS.tl_accent=a;document.documentElement.dataset.accent=a}
 function upLog(force){const b=$('#lgb');if(!b||S.tab!='lg'||document.querySelector('.mask'))return;if(!force&&(S.paused||busyScroll()))return void(S.pend=1);S.pend=0;patch(b,lgBody());bind();bind2()}
 function busyScroll(){return S.touching||Date.now()-(S.lastScroll||0)<1500||(S.lgv!='dev'&&scrollY>240)}
-async function loadState(){try{S.st=await A('/state');if(document.querySelector('.mask')||S.dragging||(S.optEdit&&S.tab=='st')||(S.impEdit&&S.tab=='sb'))head();else if(S.tab=='lg'&&busyScroll()){head();S.pend=1}else render()}catch(e){}}
+const MLMIN=30,MLMAX=120;
+// M10：可交互图表——手指点/按住或鼠标移动时显示竖线和数值，松开（按住后）或点别处消失；touch-action:pan-y 不挡页面上下滚动
+const ICD={};
+function ichW(id,h){return `<div class="ich" data-ic="${id}">${h}</div>`}
+const ftm=t=>new Date(t*1e3).toLocaleString('zh-CN',{...tz,month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+function icNear(d,f){let b=0,bd=9;for(let i=0;i<d.n;i++){const x=Math.abs(d.x(i)-f);if(x<bd){bd=x;b=i}}return b}
+function icShow(el,f){const d=ICD[el.dataset.ic];if(!d||!d.n)return icHide();f=Math.max(0,Math.min(1,f));const i=icNear(d,f),x=d.x(i);
+ let l=el.querySelector('.ich-l'),t=el.querySelector('.ich-t');if(!l){l=document.createElement('i');l.className='ich-l';t=document.createElement('div');t.className='ich-t';el.append(l,t)}
+ l.style.left=(x*100)+'%';t.innerHTML=d.row(i);const w=el.clientWidth,tw=t.offsetWidth,px=x*w;t.style.left=Math.max(0,Math.min(w-tw,px>w/2?px-tw-8:px+8))+'px';S.ic={id:el.dataset.ic,f}}
+function icHide(){S.ic=null;document.querySelectorAll('.ich-l,.ich-t').forEach(e=>e.remove())}
+function icRe(){if(!S.ic)return;const el=document.querySelector(`.ich[data-ic="${S.ic.id}"]`);if(el)icShow(el,S.ic.f);else S.ic=null}
+(()=>{let dn=null;const fx=(el,e)=>{const r=el.getBoundingClientRect();return (e.clientX-r.left)/(r.width||1)};
+ document.addEventListener('pointerdown',e=>{const el=e.target.closest&&e.target.closest('.ich');if(!el){if(S.ic)icHide();return}dn={el,t:Date.now(),x:e.clientX,touch:e.pointerType!='mouse',mv:0};icShow(el,fx(el,e))},{passive:true});
+ document.addEventListener('pointermove',e=>{if(dn&&dn.touch){if(Math.abs(e.clientX-dn.x)>6)dn.mv=1;icShow(dn.el,fx(dn.el,e));return}if(e.pointerType=='mouse'){const el=e.target.closest&&e.target.closest('.ich');if(el)icShow(el,fx(el,e));else if(S.ic&&!dn)icHide()}},{passive:true});
+ document.addEventListener('pointerup',()=>{if(!dn)return;const d=dn;dn=null;if(d.touch&&(d.mv||Date.now()-d.t>400))icHide()});
+ document.addEventListener('pointercancel',()=>{if(dn){dn=null;icHide()}});
+})();
+const mhPts=()=>S.mh&&S.mh.points||[];
+const glab=n=>{const g=grp(n);return g?gl(g):n};
+function mhGroup(){const p=mhPts(),mg=S.st&&S.st.main_group||S.mh&&S.mh.main_group,has=n=>p.some(x=>(x.g||[]).some(y=>y.g==n));if(mg&&has(mg))return mg;for(let i=p.length-1;i>=0;i--)if(p[i].g&&p[i].g.length)return p[i].g[0].g;return ''}
+const dlv=v=>v>0?v+' ms':v==0?'<span class="lat-bad">失败</span>':'未测';
+function mhSw(a,b){return (S.mh&&S.mh.switches||[]).filter(e=>e.t>a&&e.t<=b)}
+function mhRow(i){const p=mhPts()[i];if(!p)return'';const sw=mhSw(p.t-60,p.t);
+ return `<b>${ftm(p.t)}</b><br>内核内存 ${(p.core/1024).toFixed(1)} MB<span class="mut">（Go ${(p.anon/1024).toFixed(1)}）</span><br>可用内存 ${(p.avail/1024).toFixed(0)} MB<br>↓ ${fmtB(p.down)} · ↑ ${fmtB(p.up)}${(p.g||[]).map(g=>`<br>${esc(glab(g.g))}：${esc(g.n)} ${dlv(g.d)}${g.b?`<br><span class="mut">　备用 ${esc(g.b)} ${dlv(g.bd)}</span>`:''}`).join('')}${sw.map(e=>`<br><span class="ich-sw">⇄ ${esc(glab(e.g))}：${esc(e.from)} → ${esc(e.to)}${e.fast?'（快速切换）':''}</span>`).join('')}`}
+function mhGeo(){const p=mhPts(),t0=p[0].t,t1=p[p.length-1].t,sp=t1-t0||1;return {p,t0,t1,sp,W:300,H:70,X:t=>((t-t0)/sp*300).toFixed(1),f:i=>(p[i].t-t0)/sp}}
+function swLines(G,only){return (S.mh.switches||[]).filter(e=>e.t>=G.t0-60&&e.t<=G.t1&&(!only||e.g==only)).map(e=>`<line x1="${G.X(Math.max(G.t0,e.t))}" x2="${G.X(Math.max(G.t0,e.t))}" y1="0" y2="${G.H}" stroke="var(--warn)" stroke-width="1.2" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>`).join('')}
+function memChart(){const h=S.mh,p=mhPts();if(p.length<2)return '<p class="mut" style="font-size:11.5px;margin-top:4px">内存曲线：每分钟记一次，开始记录后几分钟就能看到。</p>';
+ const G=mhGeo(),mx=Math.max(...p.map(x=>x.core))*1.1||1,Y=v=>(G.H-v/mx*G.H).toFixed(1),line=k=>p.map(x=>G.X(x.t)+','+Y(x[k])).join(' '),pk=h.peak,last=p[p.length-1];
+ ICD.mem={n:p.length,x:G.f,row:mhRow};
+ return `<div class="mut mh-h"><span>内核内存</span><span>现在 ${(last.core/1024).toFixed(1)} MB · 可用 ${(last.avail/1024).toFixed(0)} MB</span></div>
+${ichW('mem',`<svg class="mh-svg" viewBox="0 0 ${G.W} ${G.H}" preserveAspectRatio="none">${swLines(G)}<polyline fill="none" stroke="var(--acc)" stroke-width="1.6" vector-effect="non-scaling-stroke" points="${line('core')}"/><polyline fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="1" vector-effect="non-scaling-stroke" points="${line('anon')}"/></svg>`)}
+<div class="mut mh-n">峰值 ${(pk.core/1024).toFixed(1)} MB（${ftm(pk.t)}，那一分钟经代理 ↓ ${fmtB(pk.down)} ↑ ${fmtB(pk.up)}）。粗线是内核总内存，细线是其中的 Go 内存（「内核内存上限」管的就是这部分）。</div>`}
+function latChart(){const p=mhPts();if(p.length<2)return '';const mg=mhGroup();
+ const v=p.map(x=>(x.g||[]).find(y=>y.g==mg)||null),ds=v.flatMap(g=>g?[g.d,g.bd||0]:[]).filter(d=>d>0);
+ if(!mg||!ds.length)return '<p class="mut" style="font-size:11.5px;margin-top:10px">节点延迟曲线：看门狗每分钟的检测结果，开始记录后几分钟就能看到。</p>';
+ const G=mhGeo(),mx=Math.min(Math.max(...ds)*1.15,3000),Y=d=>(G.H-Math.min(d,mx)/mx*(G.H-6)).toFixed(1);
+ const seg=(k,attr)=>{const out=[];let c=[];p.forEach((x,i)=>{const d=v[i]?v[i][k]:-1;if(d>0)c.push(G.X(x.t)+','+Y(d));else{if(c.length)out.push(c);c=[]}});if(c.length)out.push(c);return out.map(c=>`<polyline fill="none" ${attr} vector-effect="non-scaling-stroke" points="${c.length==1?c[0]+' '+c[0]:c.join(' ')}"/>`).join('')};
+ const fails=p.map((x,i)=>v[i]&&v[i].d==0?`<rect x="${(G.X(x.t)-.8).toFixed(1)}" y="${G.H-5}" width="1.6" height="5" fill="var(--bad)"/>`:'').join('');
+ let li=v.length-1;while(li>0&&!v[li])li--;const lv=v[li],nsw=mhSw(G.t0-60,G.t1).filter(e=>e.g==mg).length;
+ ICD.lat={n:p.length,x:G.f,row:mhRow};
+ return `<div class="mut mh-h" style="margin-top:12px"><span>${esc(glab(mg))} 节点延迟</span><span class="mh-now">${lv?esc(lv.n)+' '+dlv(lv.d):''}</span></div>
+${ichW('lat',`<svg class="mh-svg" viewBox="0 0 ${G.W} ${G.H}" preserveAspectRatio="none">${swLines(G,mg)}${seg('bd','stroke="currentColor" stroke-opacity=".4" stroke-width="1" stroke-dasharray="3 2"')}${seg('d','stroke="var(--acc)" stroke-width="1.6"')}${fails}</svg>`)}
+<div class="mut mh-n"><span style="color:var(--acc)">━</span> 当前节点　<span>┄</span> 备用节点　<span style="color:var(--warn)">┆</span> 切换${nsw?' '+nsw+' 次':''}　<span style="color:var(--bad)">▮</span> 探测失败</div>`}
+function mhCard(){const p=mhPts(),sp=p.length>1?p[p.length-1].t-p[0].t:0,rng=sp>=3600?'近 '+Math.round(sp/3600)+' 小时':sp>0?'近 '+Math.max(1,Math.round(sp/60))+' 分钟':'';
+ return `<div class="card"><h3>内存与节点延迟 <span class="sp"></span><span class="mut" style="font-size:11.5px;font-weight:400">${rng?rng+' · ':''}每分钟一点</span></h3>${memChart()}${latChart()}<p class="mut" style="font-size:11px;margin-top:8px">手指点住曲线（电脑上移动鼠标）看那一分钟的数值。只存在内存里，保留 48 小时，重启后清空。</p></div>`}
+function autoCard(){const a=S.st.auto;if(!a)return'';const r=a.ranges,rc=S.st.watchdog.recover||3,sw=(k,on)=>`<div class="sw sm ${on?'on':''}" data-asw="${k}"></div>`,num=(k,key,u)=>`<div class="trail"><input type="number" inputmode="numeric" min="${r[key][0]}" max="${r[key][1]}" id="a_${k}" value="${a[key]}" style="width:64px;text-align:right"><span class="mut">${u}</span></div>`,d=t=>`<div class="mut" style="font-size:11.5px">${t}</div>`,ce=a.core_err;
+ return `<div class="card"><h3>自动切换</h3>
+<div class="set"><div>快速切换${d('当前节点有一次测不通，就改成每隔几秒复测；在「判定时间」里一半以上测不通，马上换到下一个能用的节点，不用再等 3 分钟。关掉就和以前一样：连续 3 次（约 3 分钟）测不通才换。')}</div>${sw('fs',a.fast_switch)}</div>
+<div class="set"><div>复测间隔${d(`快速复测时隔多久测一次（${r.fast_retest_s[0]}–${r.fast_retest_s[1]} 秒）`)}</div>${num('rt','fast_retest_s','秒')}</div>
+<div class="set"><div>判定时间${d(`这段时间里一半以上测不通才换节点（${r.fast_window_s[0]}–${r.fast_window_s[1]} 秒，不能比复测间隔短）`)}</div>${num('wd','fast_window_s','秒')}</div>
+<div class="set"><div>内核报错时马上复测${d(`代理内核短时间内连着报「连接超时」时，马上复测当前节点；只是提前测，换不换还是看测试结果。要开着快速切换才有用。${ce&&ce.kicks?'已触发 '+ce.kicks+' 次，最近一次 '+tfmt(ce.last_kick)+'。':''}`)}</div>${sw('ck',a.core_err_kick)}</div>
+<div class="set"><div>报错条数${d(`20 秒内报了几条才算（${r.core_err_count[0]}–${r.core_err_count[1]} 条）`)}</div>${num('cn','core_err_count','条')}</div>
+<div class="set"><div>备用节点也测${d('每次检测顺便测一下排在当前节点后面的那个节点，节点页能看到它的延迟，真要切换时更有底。')}</div>${sw('pb',a.probe_backup)}</div>
+<div class="set"><div>换走后多久才换回${d(`因为不稳被快速换走后，至少等这么久才考虑换回原来的节点（换回仍要连续正常 ${rc} 次、测速通过），免得来回跳。${r.switch_back_min[0]}–${r.switch_back_min[1]} 分钟，填 0 不等。`)}</div>${num('bm','switch_back_min','分钟')}</div>
+<div class="btns"><button class="btn pri" id="a_save">保存</button></div><p class="mut" style="font-size:11.5px;margin-top:6px">保存后立即生效，不重启内核、不断网。</p></div>`}
+async function loadMH(){if(S.tab!='ov'||Date.now()-(S.mhAt||0)<55e3)return;S.mhAt=Date.now();try{S.mh=await A('/memhist')}catch(e){}}
+async function loadState(){await loadMH();try{S.st=await A('/state');if(S.tab=='st'&&S.sub=='set'&&Date.now()-(S.upAt||0)>9e3&&!document.querySelector('.mask'))await loadUp();if(document.querySelector('.mask')||S.dragging||(S.optEdit&&S.tab=='st')||(S.impEdit&&S.tab=='sb'))head();else if(S.tab=='lg'&&busyScroll()){head();S.pend=1}else render();upHook()}catch(e){}}
 async function loadConns(){try{S.cx=await A('/conns');S.cx.conns=S.cx.conns||[];S.cx.devices=S.cx.devices||[];if(S.drawer&&!S.touching)upDrawer();if(document.querySelector('.mask'))return;if(S.tab=='dv'||S.tab=='ov'){if(!S.touching)render()}else if(S.tab=='lg')upLog()}catch(e){}}
-async function loadLive(){try{S.lv=await A('/live');if(S.st&&(S.lv.enabled!=S.st.enabled||S.lv.fallback!=S.st.fallback))loadState();head();const c=$('#chart');if(c)c.innerHTML=chart()}catch(e){}}
+async function loadLive(){try{S.lv=await A('/live');if(S.st&&(S.lv.enabled!=S.st.enabled||S.lv.fallback!=S.st.fallback))loadState();head();const c=$('#chart');if(c){c.innerHTML=chart();icRe()}}catch(e){}}
 function login(){if($('#login'))return;$('#view').innerHTML='';const m=sheet(`<div id="login"><div class="logo" style="justify-content:center;margin:6px 0 14px"><i></i>TinyLane</div><div class="fld"><label>路由器 root 密码（与 LuCI 相同）</label><input type="password" id="lp" autocomplete="current-password"></div><div class="btns"><button class="btn pri" id="lb">登录</button></div><p class="mut" id="lm" style="font-size:12px;margin-top:8px"></p></div>`,m=>{
  const go=async()=>{try{await A('/login',{password:m.querySelector('#lp').value});m.remove();start()}catch(e){m.querySelector('#lm').textContent=e.message}};m.querySelector('#lb').onclick=go;m.querySelector('#lp').onkeydown=e=>{if(e.key=='Enter')go()};setTimeout(()=>m.querySelector('#lp').focus(),50)});m.onclick=null}
 let timers=[];
@@ -346,3 +407,74 @@ theme(S.theme);accent(S.accent);nav();
 (async()=>{const m=/(?:^#|&)sid=([0-9a-f]{32})/.exec(location.hash);if(m)history.replaceState(null,'',location.pathname+location.search);let s={};try{s=await A('/session')}catch(e){}
  if(!s.authed&&m){try{await A('/luci-login',{sid:m[1]});s.authed=true}catch(e){}}
  s.authed?start():login()})();
+// M11：检查更新 / 一键更新 / 自检失败自动退回。S.up = /api/update/status；更新弹窗和进度共用一个抽屉 #ups。
+const UPH={download:1,verify:2,backup:3,restart:3};
+async function loadUp(){try{S.up=await A('/update/status');S.upAt=Date.now();S.upOff=0}catch(e){S.upOff=1}return S.up}
+function upDot(on){document.querySelectorAll('#tb [data-t=ov],#side [data-t=ov]').forEach(b=>{let d=b.querySelector('.rdot');if(on&&!d){d=document.createElement('i');d.className='rdot';b.appendChild(d)}else if(!on&&d)d.remove()})}
+function upHook(){const u=S.st&&S.st.update;if(!u)return;upDot(!!u.dot);if(S.upShown||document.querySelector('.mask'))return;
+ if(u.busy||u.result){S.upShown=1;loadUp().then(()=>openUp())}else if(u.popup){S.upShown=1;loadUp().then(()=>{if(S.up&&S.up.newer)openUp('offer')})}}
+function mdLite(t){return esc(t).split('\n').map(l=>{l=l.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>');
+ if(/^#{1,4}\s/.test(l))return `<div class="un-h">${l.replace(/^#+\s*/,'')}</div>`;if(/^\s*[-*]\s+/.test(l))return `<div class="un-li">${l.replace(/^\s*[-*]\s+/,'')}</div>`;return l.trim()?`<div>${l}</div>`:'<div class="un-sp"></div>'}).join('')}
+const pubDay=s=>s?new Date(s).toLocaleDateString('zh-CN',{...tz,month:'numeric',day:'numeric'})+' 发布':'';
+function upSpace(u){const s=u.space;if(!s||s.mode=='flash')return'';return `<div class="banner ${s.mode=='none'?'bad':'warn'} up-sp">${esc(s.msg)}</div>`}
+function upOffer(u){const r=u.latest,no=u.space&&u.space.mode=='none',sch=u.scheduled==r.ver;
+ return `<h3>有新版本 v${esc(r.ver)}</h3><div class="mut up-meta">当前 ${esc(u.cur)} · 下载 ${fmtB(r.gz_size)} · ${pubDay(r.published)}</div>
+<div class="up-notes">${r.notes?mdLite(r.notes):'<span class="mut">这个版本没有写更新说明。</span>'}</div>${upSpace(u)}
+${r.missing?`<div class="banner bad up-sp">这个版本缺少${esc(r.missing)}，不能自动更新。</div>`:''}
+<div class="up-btns"><button class="btn pri" data-uo="now" ${no||r.missing?'disabled':''}>立即更新</button><button class="btn" data-uo="${sch?'unsched':'4am'}" ${no||r.missing?'disabled':''}>${sch?'取消 4:00 更新':'今晚 4:00 更新'}</button>
+<button class="btn" data-uo="later">稍后</button><button class="btn dan" data-uo="skip">跳过这个版本</button></div>
+<p class="mut up-tip">更新时 TinyLane 会重启，网络中断约 5 秒，面板会自动重连；之后自检 3 分钟，没通过会自动退回 ${esc(u.cur)}。</p>`}
+function upItems(it,fin){return (it||[]).length?`<div class="up-items">${it.map(x=>{const c=x.skip?'sk':x.ok?'ok':fin?'bad':'wt';return `<div class="${c}"><i>${{sk:'–',ok:'✓',bad:'✗',wt:'…'}[c]}</i><span>${esc(x.name)}</span>${c=='wt'?'<small>还没通过，继续观察</small>':x.detail?`<small>${esc(x.detail)}</small>`:''}</div>`}).join('')}</div>`:''}
+function upStep(n,cur,t,sub){const s=n<cur?'done':n==cur?'on':'';return `<div class="up-st ${s}"><i>${n<cur?'✓':n}</i><div><b>${t}</b>${sub?`<small>${sub}</small>`:''}</div></div>`}
+function upResult(r){const ok=r.result=='ok'||r.result=='reverted',why=(r.reason||'').replace(/^自检没通过：/,'');
+ const t={ok:`已更新到 v${esc(r.to)}，自检通过`,rolled_back:`自检没通过，已退回 v${esc(r.to)}`,rollback_failed:'自检没通过，没能自动退回',reverted:`已退回 v${esc(r.to)}`,revert_failed:'退回没完成',interrupted:'更新被中断'}[r.result]||esc(r.result);
+ return `<div class="up-res ${ok?'ok':'bad'}"><div class="up-ic">${ok?'✓':'!'}</div><h3>${t}</h3>${why?`<p class="mut">${r.result=='rolled_back'?'没通过的项：':''}${esc(why)}</p>`:''}
+${r.result=='ok'?'<p class="mut">各项自检都通过了。需要时可以在「设置 → 更新」里退回上一版。</p>':''}${r.result=='rolled_back'?'<p class="mut">配置也已恢复成更新前的样子。可以把这个提示截图发给维护者。</p>':''}</div>
+<div class="btns"><button class="btn pri" data-uo="ack">好的</button></div>`}
+function upProg(u){const j=u.job,tr=u.trial;if(u.result&&!u.result.acked&&(!j||u.result.t>=j.start-5))return upResult(u.result);
+ if(j&&j.phase=='error')return `<div class="up-res bad"><div class="up-ic">!</div><h3>更新没完成</h3><p class="mut">${esc(j.err)}</p><p class="mut">当前版本没有变化，可以稍后再试。</p></div><div class="btns"><button class="btn pri" data-uo="ack">好的</button></div>`;
+ const rv=(j&&j.kind=='revert')||(tr&&tr.kind=='revert'),ver=tr?(rv?tr.old:tr.new):j?j.ver:'';
+ let cur=j?UPH[j.phase]||1:3,sub3=S.upOff?'正在重启，面板会自动重新连上…':'旧版先压缩保存，再换新版并重启（网络中断约 5 秒）',sub4='';
+ if(tr&&tr.state=='check'){cur=4;const left=Math.max(0,Math.round(tr.deadline-tr.now-(Date.now()-S.upAt)/1e3));sub4=left>0?`还剩 ${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}`:'最后确认中…'}
+ if(tr&&/rollback/.test(tr.state)){cur=4;sub4='自检没通过，正在退回旧版…'}
+ if(S.upOff&&cur<3)cur=3;const dl=j&&j.phase=='download'?`${fmtB(j.done)} / ${fmtB(j.total)}`:'';
+ const pct=j&&j.total?Math.min(100,Math.round(j.done/j.total*100)):0;
+ if(rv)return `<h3>正在退回 v${esc(ver)}</h3>${upStep(1,cur,'下载旧版',j&&j.phase=='download'?dl:'用路由器上保存的上一版时跳过')}${upStep(3,cur,'换回旧版并重启',sub3)}<p class="mut up-tip">完成后面板会自动刷新。</p>`;
+ return `<h3>正在更新到 v${esc(ver)}</h3>${upStep(1,cur,'下载',dl)}${cur==1&&j?`<div class="up-bar"><i style="width:${pct}%"></i></div>`:''}${upStep(2,cur,'校验签名和文件')}${upStep(3,cur,'备份并重启',sub3)}${upStep(4,cur,'自检 3 分钟',sub4)}
+${cur==4?upItems(tr.items,/rollback/.test(tr.state)):''}${tr&&tr.no_rollback?'<div class="banner bad up-sp">内存里的旧版已丢失，GitHub 上也下载不到；这次自检不过也没法自动退回。</div>':''}<p class="mut up-tip">可以关掉这个窗口，更新会在后台继续；自检没通过会自动退回 ${esc(tr?tr.old:u.cur)}。</p>`}
+function openUp(mode){const u=S.up;if(!u)return;if(document.getElementById('ups'))return;
+ const view=()=>mode=='offer'&&u.newer&&!u.job&&!u.trial?'offer':'prog';
+ if(view()=='offer')A('/update/seen',{ver:u.latest.ver}).catch(()=>{});
+ const m=sheet(`<div class="grab"></div><div id="ups"></div>`,m=>{const box=m.querySelector('#ups');let tm=null,stop=0;
+  const draw=()=>{const u=S.up;const v=mode=='offer'&&u.newer&&!u.job&&!u.trial?'offer':'prog';box.innerHTML=v=='offer'?upOffer(u):upProg(u);box.dataset.v=v;bindUp(m,box);
+   const res=box.querySelector('.up-res');if(v=='prog'&&!res&&!stop){clearTimeout(tm);tm=setTimeout(async()=>{if(!m.isConnected)return;await loadUp();if(S.up&&!S.up.job&&!S.up.trial&&!S.up.result)S.up.job={phase:'restart',start:0};draw()},1000)}
+   if(res&&S.upOff===0&&S.up.result&&S.up.result.t)loadState()};
+  m.upDraw=d=>{mode=d||mode;draw()};const close=m.onclick;m.onclick=e=>{if(e.target!==m)return;stop=1;clearTimeout(tm);if(box.querySelector('[data-uo=ack]'))A('/update/ack',{}).catch(()=>{});else if(box.dataset.v=='prog')toast('更新在后台继续');m.remove()};draw()});
+ return m}
+function bindUp(m,box){box.querySelectorAll('[data-uo]').forEach(b=>b.onclick=async e=>{e.stopPropagation();const k=b.dataset.uo,v=S.up.latest&&S.up.latest.ver;
+ if(k=='later'){m.remove();return}
+ if(k=='ack'){await A('/update/ack',{}).catch(()=>{});m.remove();S.upShown=1;await loadUp();loadState();return}
+ if(k=='skip'){const r=await act('/update/skip',{ver:v},'已跳过 v'+v+'，下一个版本再提醒',b);m.remove();loadUp().then(render);return}
+ if(k=='4am'){const r=await act('/update/start',{ver:v,when:'4am'},'已安排今晚 4:00 更新',b);if(r){S.up=r;m.remove();render()}return}
+ if(k=='unsched'){const r=await act('/update/start',{ver:v,when:'cancel'},'已取消 4:00 更新',b);if(r){S.up=r;m.remove();render()}return}
+ if(k=='now'){b.disabled=true;try{S.up=await A('/update/start',{ver:v});m.upDraw('prog')}catch(err){toast('✗ '+err.message,1);b.disabled=false}}})}
+function updCard(){const u=S.up;if(!u&&!S.upLoading){S.upLoading=1;setTimeout(()=>loadUp().then(()=>{S.upLoading=0;if(S.tab=='st')render()}),0)}if(!u)return `<div class="card"><h3>更新</h3><div class="set">当前版本<span class="rov">${esc(S.st.version)}</span></div><p class="mut sm2">读取中…</p></div>`;
+ const r=u.latest,busy=u.job&&u.job.phase!='error'||u.trial,pc=u.prev,test=/-/.test(u.cur);
+ const line=busy?'正在更新…':u.newer?`有新版本 v${esc(r.ver)}${u.skip==r.ver?'（已跳过）':''}`:r?(test&&r.ver!=u.cur?`当前是测试版，比最新正式版 v${esc(r.ver)} 新`:'已是最新'):u.last_check?'GitHub 上还没有正式版':'还没检查过';
+ const ro=v=>`<span class="rov">${v}</span>`;
+ return `<div class="card" id="upc"><h3>更新</h3><div class="set">当前版本${ro(esc(u.cur))}</div>
+<div class="set"><div>最新正式版<div class="mut sm2">${line}</div></div>${busy?'<button class="btn pri" data-up="prog">查看进度</button>':u.newer?`<button class="btn pri" data-up="open">查看 v${esc(r.ver)}</button>`:ro(r?'v'+esc(r.ver):'—')}</div>
+${u.scheduled&&u.newer?`<div class="banner up-sp"><span>已安排今晚 4:00 更新到 v${esc(u.scheduled)}</span><button class="btn" data-up="unsched">取消</button></div>`:''}
+<div class="set"><div>上次检查<div class="mut sm2">${u.last_check?ago(u.last_check)+' · ':''}每天自动查一次</div></div><button class="btn" data-up="check">检查更新</button></div>
+${u.check_err?`<p class="mut sm2 up-err">${esc(u.check_err)}</p>`:''}
+<div class="set"><div>自动更新<div class="mut sm2">开了之后只在凌晨 4:00 更新正式版；闪存不够、上一版只能放内存时不自动更新</div></div><div class="sw ${u.auto?'on':''}" data-up="auto"></div></div>
+<div class="set"><div>退回上一版<div class="mut sm2">${pc?`路由器上存有 v${esc(pc.ver)}（${pc.where=='flash'?'闪存':'内存，重启路由器后会丢'}）`:'路由器上没有存上一版，会从 GitHub 下载上一个正式版'}</div></div><button class="btn" data-up="revert" ${busy?'disabled':''}>退回…</button></div>
+<p class="mut sm2 up-tip">更新包带签名，校验不通过不会安装；更新后自检 3 分钟，不通过自动退回。</p></div>`}
+function bindM11(){const on=(sel,fn)=>document.querySelectorAll('#view '+sel).forEach(e=>e.onclick=ev=>{ev.stopPropagation();fn(e,ev)});
+ on('[data-up=check]',async e=>{const r=await act('/update/check',{},null,e);if(r){S.up=r;toast(r.newer?'有新版本 v'+r.latest.ver:r.latest?'已是最新':'GitHub 上还没有正式版');render();if(r.newer&&!(r.skip==r.latest.ver))openUp('offer')}else loadUp().then(render)});
+ on('[data-up=open]',()=>openUp('offer'));on('[data-up=prog]',()=>openUp());
+ on('[data-up=unsched]',async e=>{const r=await act('/update/start',{ver:S.up.scheduled,when:'cancel'},'已取消 4:00 更新',e);if(r){S.up=r;render()}});
+ on('[data-up=auto]',async e=>{const nv=!S.up.auto;e.classList.toggle('on',nv);const r=await act('/update/auto',{on:nv},nv?'自动更新已打开（只在 4:00）':'自动更新已关闭');await loadUp();render()});
+ on('[data-up=revert]',async e=>{const i=await act('/update/revert',{},null,e);if(!i)return;
+  confirmSheet('退回到 v'+i.ver+'？',i.source=='github'?`路由器上没有存上一版，将从 GitHub 下载 v${i.ver}（约 ${fmtB(i.gz_size)}），校验签名后替换；配置保持现在的。TinyLane 会重启，网络中断约 5 秒。`:'用路由器上保存的上一版和它当时的配置（现在的配置另存为 tinylane.json.before-revert）。TinyLane 会重启，网络中断约 5 秒。退回后不会再提醒当前这个版本。',
+   async()=>{try{S.up=await A('/update/revert',{confirm:true,ver:i.ver});openUp()}catch(err){toast('✗ '+err.message,1)}})})}

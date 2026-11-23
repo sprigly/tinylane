@@ -64,8 +64,8 @@ type Config struct {
 	Rules   []Rule   `json:"rules"`
 
 	DNS struct {
-		CN       []string `json:"cn"`       // 223.5.5.5
-		Foreign  []string `json:"foreign"`  // https://1.1.1.1/dns-query（经 foreign_detour）
+		CN       []string `json:"cn"`      // 223.5.5.5
+		Foreign  []string `json:"foreign"` // https://1.1.1.1/dns-query（经 foreign_detour）
 		Detour   string   `json:"foreign_detour"`
 		Fallback []string `json:"fallback"` // tinylane 停止后 dnsmasq 改回的上游
 	} `json:"dns"`
@@ -82,24 +82,27 @@ type Config struct {
 		DisablePMTUD      bool `json:"disable_path_mtu_discovery"`
 	} `json:"hy2_mtu_fix"`
 
-	FindNeighbor bool   `json:"find_neighbor"`
+	FindNeighbor bool `json:"find_neighbor"`
 	// KernelCNBypass：规则模式下国内 IP 在 nft 里直接绕过 tproxy（缺省 = 开）。全局代理模式 / 设备=全局时不绕过。
 	KernelCNBypass *bool `json:"kernel_cn_bypass,omitempty"`
 	// KernelConnLog（M6d）：记录内核直连的连接（读 conntrack，缺省 = 开）。只影响面板显示，不进 gen。
 	KernelConnLog *bool `json:"kernel_conn_log,omitempty"`
+	// CoreMemLimitMB（M9）：代理内核 Go 内存软上限（MB），缺省 40；0 = 关（96 MB 兜底）。不进 gen，改了不重启内核。
+	CoreMemLimitMB *int `json:"core_mem_limit_mb,omitempty"`
 	// DirectTimeoutS：直连出站 TCP 拨号超时（秒），缺省 15（sing-box 默认 5 s 在上游丢包时太短）
 	DirectTimeoutS int `json:"direct_connect_timeout_s,omitempty"`
 	// SQM：WAN 口 cake 整形 + cake-autorate（缺省关；单位 Mbit）
-	SQM SQMConfig `json:"sqm"`
-	CacheFile    string `json:"cache_file"` // tmpfs，记住手动选择的节点
+	SQM       SQMConfig `json:"sqm"`
+	CacheFile string    `json:"cache_file"` // tmpfs，记住手动选择的节点
 
 	// M2/M3
-	ProbeListen string            `json:"probe_listen"` // 看门狗吞吐探测专用 mixed 入站（127.0.0.1:7891），固定走隐藏组 tl-probe
-	Panel       PanelConf         `json:"panel"`
-	Watchdog    WatchdogConf      `json:"watchdog"`
-	Subs        []Sub             `json:"subscriptions,omitempty"`
-	DeviceNames map[string]string `json:"device_names,omitempty"` // MAC(小写) → 备注名
-	DeviceInfo  map[string]DevInfo `json:"device_info,omitempty"` // MAC(小写) → 类型/首次出现（M4，含从旧设备管理插件迁移的数据）
+	ProbeListen string             `json:"probe_listen"` // 看门狗吞吐探测专用 mixed 入站（127.0.0.1:7891），固定走隐藏组 tl-probe
+	Panel       PanelConf          `json:"panel"`
+	Watchdog    WatchdogConf       `json:"watchdog"`
+	Update      UpdateConf         `json:"update"` // M11 自动更新
+	Subs        []Sub              `json:"subscriptions,omitempty"`
+	DeviceNames map[string]string  `json:"device_names,omitempty"` // MAC(小写) → 备注名
+	DeviceInfo  map[string]DevInfo `json:"device_info,omitempty"`  // MAC(小写) → 类型/首次出现（M4，含从旧设备管理插件迁移的数据）
 
 	// M7
 	ConfigVersion int     `json:"config_version,omitempty"`
@@ -123,17 +126,17 @@ type GuestWifi struct {
 }
 
 type CustomRuleSet struct {
-	Name     string `json:"name"`
-	URL      string `json:"url"`
-	Format   string `json:"format,omitempty"` // binary(.srs) | source(.json)；空 = 按扩展名
-	Outbound string `json:"outbound"`
-	Update   string `json:"update,omitempty"` // daily | weekly | off（缺省 weekly）
-	Disabled bool   `json:"disabled,omitempty"`
-	Updated  string `json:"updated,omitempty"`
-	Count    int    `json:"count,omitempty"` // 规则条数（下载时统计）
-	HasDomain bool  `json:"has_domain,omitempty"` // 含域名类规则（决定要不要加 DNS 分流规则）
-	HasIP     bool  `json:"has_ip,omitempty"`
-	LastErr  string `json:"last_error,omitempty"`
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	Format    string `json:"format,omitempty"` // binary(.srs) | source(.json)；空 = 按扩展名
+	Outbound  string `json:"outbound"`
+	Update    string `json:"update,omitempty"` // daily | weekly | off（缺省 weekly）
+	Disabled  bool   `json:"disabled,omitempty"`
+	Updated   string `json:"updated,omitempty"`
+	Count     int    `json:"count,omitempty"`      // 规则条数（下载时统计）
+	HasDomain bool   `json:"has_domain,omitempty"` // 含域名类规则（决定要不要加 DNS 分流规则）
+	HasIP     bool   `json:"has_ip,omitempty"`
+	LastErr   string `json:"last_error,omitempty"`
 }
 
 type DevInfo struct {
@@ -167,6 +170,14 @@ type WatchdogConf struct {
 	MinDownKBps   int    `json:"min_down_kbps"`    // 默认 64
 	MinUpKBps     int    `json:"min_up_kbps"`      // 默认 32
 	HoldMinutes   int    `json:"hold_minutes"`     // 面板手动选择后暂停自动切换，默认 60
+	// M10 快速切换（见 m10.go）。指针 = 缺省开 / 0 有意义的项
+	FastSwitch    *bool `json:"fast_switch,omitempty"`     // 当前节点一次探测失败 → 快速复测，缺省开
+	FastRetestS   int   `json:"fast_retest_s,omitempty"`   // 复测间隔秒，缺省 15（5–60）
+	FastWindowS   int   `json:"fast_window_s,omitempty"`   // 判定窗口秒，缺省 30（15–180）
+	CoreErrKick   *bool `json:"core_err_kick,omitempty"`   // 内核超时报错成批出现 → 触发快速复测，缺省开
+	CoreErrCount  int   `json:"core_err_count,omitempty"`  // 20 秒内几条算成批，缺省 5（3–50）
+	ProbeBackup   *bool `json:"probe_backup,omitempty"`    // 每轮也测各组下一个备用节点，缺省开
+	SwitchBackMin *int  `json:"switch_back_min,omitempty"` // 快速切走后多少分钟内不切回，缺省 5（0–60）
 }
 
 type Sub struct {
@@ -216,8 +227,8 @@ func (n Node) Type() string { s, _ := n.Outbound["type"].(string); return s }
 type Group struct {
 	Name    string   `json:"name"`
 	Label   string   `json:"label,omitempty"` // 面板显示名（只影响显示；name 是内核里的组 tag，规则/设备都按 name 引用）
-	Type    string   `json:"type"`    // select（手动）| failover（看门狗按顺序故障切换）
-	Members []string `json:"members"` // 手选成员，有序：第一个 = 默认
+	Type    string   `json:"type"`            // select（手动）| failover（看门狗按顺序故障切换）
+	Members []string `json:"members"`         // 手选成员，有序：第一个 = 默认
 	// M7 通用成员规则：Filter = 名称含这些关键词的节点自动加入（| 分隔，或 /正则/）；Exclude = 名称含这些的一律排除（对手选也生效）
 	Filter  string `json:"filter,omitempty"`
 	Exclude string `json:"exclude,omitempty"`
@@ -250,7 +261,9 @@ func (r Rule) hasDomain() bool {
 
 // 内置永久绕过（WireGuard 远程运维链路，任何配置都删不掉）
 // 编译时注入（build.sh 从 secret/build.env 读 TL_BUILTIN_BYPASS，逗号分隔），开源版默认为空：
-//   go build -ldflags "-X main.builtinBypass=203.0.113.10/32,10.0.0.0/24"
+//
+//	go build -ldflags "-X main.builtinBypass=203.0.113.10/32,10.0.0.0/24"
+//
 // 运行时也可以在配置 always_bypass.cidr 里写；这里写死的部分任何配置都删不掉（远程运维链路保险）。
 var builtinBypass = ""
 var builtinBypassCIDR = splitList(builtinBypass)
@@ -264,6 +277,7 @@ func splitList(s string) []string {
 	}
 	return out
 }
+
 var builtinBypassUDP = []int{51820}
 
 var privateCIDR4 = []string{
@@ -366,6 +380,7 @@ func (c *Config) applyDefaults() {
 	defi(&w.MinDownKBps, 64)
 	defi(&w.MinUpKBps, 32)
 	defi(&w.HoldMinutes, 60)
+	m10Defaults(w)
 	for i := range c.Subs {
 		def(&c.Subs[i].Auto, "weekly")
 	}

@@ -286,3 +286,42 @@ header .spd,header #thm,header .sw{flex-shrink:0}
 .chev{flex:none;width:14px;font-size:20px;line-height:1;color:var(--mut3);transition:transform .2s;text-align:center}
 .nsec.on .chev{transform:rotate(90deg)}
 .nsb{padding-left:2px}.nsb .mem:first-of-type{border-top:.5px solid var(--line)}
+/* M10 可交互图表 + 首页内存/延迟曲线 */
+.ich{position:relative;touch-action:pan-y;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;cursor:crosshair}
+.ich-l{position:absolute;top:0;bottom:0;width:1px;margin-left:-.5px;background:var(--tx);opacity:.45;pointer-events:none}
+.ich-t{position:absolute;top:2px;z-index:3;max-width:78%;padding:6px 8px;border-radius:9px;background:var(--elev);color:var(--tx);box-shadow:0 2px 10px rgba(0,0,0,.18);font-size:11.5px;line-height:1.45;pointer-events:none;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.ich-t .ich-sw{color:var(--warn)}
+.mh-h{font-size:12px;display:flex;justify-content:space-between;gap:8px;margin-top:4px}
+.mh-h span:last-child{text-align:right;overflow-wrap:anywhere}
+.mh-svg{width:100%;height:80px;display:block;overflow:visible}
+.mh-n{font-size:11.5px;margin-top:2px}
+/* M11 更新：概览红点、更新抽屉（说明 / 进度 / 结果）、设置「更新」卡 */
+.tb button,.side button{position:relative}
+.rdot{position:absolute;width:8px;height:8px;border-radius:50%;background:var(--bad);box-shadow:0 0 0 2px var(--bg)}
+.tb .rdot{top:4px;left:calc(50% + 9px)}.side .rdot{top:50%;right:12px;margin-top:-4px}
+.up-meta{font-size:13px;margin:-6px 0 10px}
+.up-notes{max-height:min(38vh,300px);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;background:var(--fill);border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.up-notes .un-h{font-weight:600;margin-top:6px}.up-notes .un-h:first-child{margin-top:0}
+.up-notes .un-li{padding-left:14px;position:relative}.up-notes .un-li::before{content:'•';position:absolute;left:2px;color:var(--mut)}
+.up-notes .un-sp{height:6px}.up-notes code{font-size:12.5px;background:var(--fill2);border-radius:4px;padding:0 4px}
+.up-sp{margin-top:10px;font-size:13.5px}
+.up-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+.up-btns .btn{height:var(--btn-l);border-radius:14px;font-size:16px;font-weight:600;min-width:0;padding:0 8px;justify-content:center;white-space:nowrap}
+.up-btns .btn[disabled],.btn[disabled]{opacity:.4;pointer-events:none}
+.up-tip{font-size:12px!important;margin-top:10px;line-height:1.45}
+.up-st{display:flex;gap:12px;align-items:flex-start;padding:9px 0;color:var(--mut)}
+.up-st i{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:13px;font-weight:600;background:var(--fill);color:var(--mut)}
+.up-st b{display:block;font-size:15.5px;font-weight:500}.up-st small{display:block;font-size:12.5px;margin-top:1px}
+.up-st.on{color:var(--tx)}.up-st.on i{background:var(--acc);color:#fff;animation:upp 1.4s ease-in-out infinite}
+.up-st.done i{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+@keyframes upp{50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--acc) 22%,transparent)}}
+.up-bar{height:6px;border-radius:3px;background:var(--fill);margin:0 0 4px 36px;overflow:hidden}.up-bar i{display:block;height:100%;background:var(--acc);border-radius:3px;transition:width .4s}
+.up-items{margin:2px 0 4px 36px;font-size:13.5px}
+.up-items>div{display:flex;flex-wrap:wrap;gap:2px 8px;padding:4px 0}.up-items i{font-style:normal;width:14px;font-weight:700}
+.up-items .ok i{color:var(--ok)}.up-items .bad i,.up-items .bad span{color:var(--bad)}.up-items .sk{color:var(--mut)}
+.up-items small{flex-basis:100%;padding-left:22px;color:var(--mut);font-size:12px}
+.up-res{text-align:center;padding:6px 4px 0}.up-res h3{margin:10px 0 6px}.up-res p{font-size:14px;margin-top:6px;overflow-wrap:anywhere}
+.up-ic{width:56px;height:56px;border-radius:50%;margin:4px auto 0;display:grid;place-items:center;font-size:28px;font-weight:700}
+.up-res.ok .up-ic{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}.up-res.bad .up-ic{background:color-mix(in srgb,var(--bad) 14%,transparent);color:var(--bad)}
+.up-err{color:var(--bad)!important}
+.up-items .wt{color:var(--mut)}.up-items .wt i{color:var(--warn)}

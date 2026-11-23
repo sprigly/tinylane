@@ -19,7 +19,9 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -43,6 +45,14 @@ type groupState struct {
 	LastCheck int64  `json:"last_check"`
 	LastHeavy int64  `json:"last_heavy"`
 	Note      string `json:"note"`
+	// M10
+	Cur       string `json:"cur,omitempty"`        // 最近一轮看到的当前节点
+	Backup    string `json:"backup,omitempty"`     // 本轮额外测的备用节点
+	FastStart int64  `json:"fast_start,omitempty"` // 快速复测开始（unix，0 = 没在复测）
+	FastNode  string `json:"fast_node,omitempty"`
+	FastN     int    `json:"fast_n,omitempty"`
+	FastFail  int    `json:"fast_fail,omitempty"`
+	BackAfter int64  `json:"back_after,omitempty"` // 快速切走后，这之前不切回
 }
 
 type Watchdog struct {
@@ -53,6 +63,10 @@ type Watchdog struct {
 	probeMu sync.Mutex // tl-probe 只能同时测一个节点
 	kick    chan struct{}
 	upDown  bool // 上游整体断网中（M6）
+	// M10
+	fullReq atomic.Bool // Kick()：立即做一轮完整检测
+	fastReq atomic.Bool // KickFast()：立即复测当前节点
+	swh     []switchEv
 }
 
 func newWatchdog(d *Daemon) *Watchdog {
@@ -106,6 +120,7 @@ func (w *Watchdog) Release(group string) {
 }
 
 func (w *Watchdog) Kick() {
+	w.fullReq.Store(true)
 	select {
 	case w.kick <- struct{}{}:
 	default:
@@ -121,16 +136,41 @@ func (w *Watchdog) run() {
 		case <-time.After(2 * time.Second):
 		}
 	}
+	// M10：完整检测仍是每 interval 一轮；快速复测中 / 内核报错触发时，中间插入只测当前节点的快速轮。
+	// 快速切换关掉时只走完整检测，与 m9 相同。
+	var next time.Time
 	for {
 		c := w.d.conf()
-		if !c.Watchdog.Disabled && w.d.coreUp.Load() && !w.d.fallback.Load() {
-			w.round(c)
+		active := !c.Watchdog.Disabled && w.d.coreUp.Load() && !w.d.fallback.Load()
+		full := w.fullReq.Swap(false)
+		if active {
+			if full || !time.Now().Before(next) {
+				w.fastReq.Store(false)
+				w.round(c)
+				next = time.Now().Add(time.Duration(c.Watchdog.Interval) * time.Second)
+			} else if fastOn(c) {
+				kicked := w.fastReq.Swap(false)
+				if kicked || w.fastActive() {
+					w.fastRound(c, kicked)
+				}
+			}
+		} else {
+			next = time.Now().Add(time.Duration(c.Watchdog.Interval) * time.Second)
+		}
+		wait := time.Until(next)
+		if active && fastOn(c) && w.fastActive() {
+			if r := time.Duration(fastRetest(c)) * time.Second; r < wait {
+				wait = r
+			}
+		}
+		if wait < 100*time.Millisecond {
+			wait = 100 * time.Millisecond
 		}
 		select {
 		case <-w.d.ctx.Done():
 			return
 		case <-w.kick:
-		case <-time.After(time.Duration(c.Watchdog.Interval) * time.Second):
+		case <-time.After(wait):
 		}
 	}
 }
@@ -319,6 +359,10 @@ func (w *Watchdog) round(c *Config) {
 		st := w.gstate(g.Name)
 		held := st.HoldUntil > now.Unix()
 		st.LastCheck = now.Unix()
+		st.Cur, st.Backup = cur, ""
+		if held {
+			st.clearFast()
+		}
 		w.mu.Unlock()
 		gs = append(gs, gi{g, cur, held})
 		mem := c.members(g.Name)
@@ -333,8 +377,33 @@ func (w *Watchdog) round(c *Config) {
 			}
 		}
 	}
+	// M10：每组当前节点之后第一个允许的备用节点也测（不参与下面的「全部失败」判断，保持 m9 语义）
+	var extra []string
+	if probeBackupOn(c) {
+		exSet := map[string]bool{}
+		for _, x := range gs {
+			mem := c.members(x.g.Name)
+			ci := indexOf(mem, x.cur)
+			if ci < 0 {
+				continue
+			}
+			for _, m := range mem[ci+1:] {
+				if !allowedIn(c, x.g, m, nodes) {
+					continue
+				}
+				w.mu.Lock()
+				w.gstate(x.g.Name).Backup = m
+				w.mu.Unlock()
+				if !testSet[m] && !exSet[m] {
+					exSet[m] = true
+					extra = append(extra, m)
+				}
+				break
+			}
+		}
+	}
 	// 同一节点一轮只测一次（多个组共用节点时不重复计数）
-	w.delayMany(test)
+	w.delayMany(append(append([]string(nil), test...), extra...))
 	// M6：本轮测到的节点全失败 → 先看国内直连通不通。不通 = 宽带/上级路由断了，不是节点的问题：
 	// 这一轮失败不计数、不切换（11-19 01:22 那次上游中断里，看门狗在恢复瞬间切了 3 次）。
 	if len(test) > 0 {
@@ -349,13 +418,14 @@ func (w *Watchdog) round(c *Config) {
 		w.mu.Unlock()
 		if allFail && !upstreamCheck() {
 			w.mu.Lock()
-			for _, n := range test {
-				if h := w.health(n); h.FailStreak > 0 {
+			for _, n := range append(append([]string(nil), test...), extra...) {
+				if h := w.health(n); h.FailStreak > 0 && h.Delay == 0 {
 					h.FailStreak--
 				}
 			}
 			for _, x := range gs {
 				w.gstate(x.g.Name).Note = "上游网络不通（国内直连也失败），暂停自动切换"
+				w.gstate(x.g.Name).clearFast()
 			}
 			first := !w.upDown
 			w.upDown = true
@@ -398,10 +468,21 @@ func (w *Watchdog) round(c *Config) {
 			w.Heavy(x.cur)
 		}
 	}
+	fast := fastOn(c)
 	for _, x := range gs {
-		if !x.held {
-			w.decide(c, x.g, x.cur, nodes)
+		if x.held {
+			continue
 		}
+		if fast && testSet[x.cur] {
+			w.mu.Lock()
+			ok := w.health(x.cur).Delay > 0
+			w.mu.Unlock()
+			w.fastSample(x.g.Name, x.cur, ok, now)
+			if w.fastEval(c, x.g, x.cur, nodes) {
+				continue
+			}
+		}
+		w.decide(c, x.g, x.cur, nodes)
 	}
 }
 
@@ -423,20 +504,7 @@ func (w *Watchdog) decide(c *Config, g Group, cur string, nodes map[string]Node)
 		case hc.HeavyFail >= c.Watchdog.Fail:
 			reason = fmt.Sprintf("连续 %d 次吞吐探测不达标（%s）", hc.HeavyFail, hc.HeavyErr)
 		}
-		for _, m := range mem {
-			if m == cur || !allowedIn(c, g, m, nodes) {
-				continue
-			}
-			w.mu.Lock()
-			hm := *w.health(m)
-			w.mu.Unlock()
-			if hm.HeavyFail >= c.Watchdog.Fail && time.Now().Unix()-hm.HeavyAt < 1800 {
-				continue // 30 分钟内吞吐不达标的先跳过
-			}
-			if w.Delay(m) == 0 { // 当场确认
-				continue
-			}
-			w.switchTo(g, cur, m, reason)
+		if w.failoverPick(c, g, cur, nodes, reason) {
 			return
 		}
 		// 非 strict 的故障切换组：全部节点都不可用 → 回落直连（上游断网的轮次在 round 里已提前返回，不会走到这里）
@@ -452,6 +520,16 @@ func (w *Watchdog) decide(c *Config, g Group, cur string, nodes map[string]Node)
 		} else {
 			w.gstate(g.Name).Note = "没有可用的备用节点，保持 " + cur
 		}
+		w.mu.Unlock()
+		return
+	}
+	// M10 防抖：快速切走后冷却期内不切回
+	w.mu.Lock()
+	ba := w.gstate(g.Name).BackAfter
+	w.mu.Unlock()
+	if curIdx > 0 && ba > time.Now().Unix() {
+		w.mu.Lock()
+		w.gstate(g.Name).Note = "刚因不稳快速切走，" + time.Unix(ba, 0).In(cst).Format("15:04") + " 之前不切回"
 		w.mu.Unlock()
 		return
 	}
@@ -478,26 +556,53 @@ func (w *Watchdog) decide(c *Config, g Group, cur string, nodes map[string]Node)
 		return
 	}
 	w.mu.Lock()
-	w.gstate(g.Name).Note = ""
+	if st := w.gstate(g.Name); st.FastStart == 0 {
+		st.Note = ""
+	}
 	w.mu.Unlock()
 }
 
-func (w *Watchdog) switchTo(g Group, from, to, reason string) {
+// failoverPick：按组顺序找第一个可用的其他节点（30 分钟内吞吐不达标的跳过，当场再测确认）并切过去。
+func (w *Watchdog) failoverPick(c *Config, g Group, cur string, nodes map[string]Node, reason string) bool {
+	for _, m := range c.members(g.Name) {
+		if m == cur || !allowedIn(c, g, m, nodes) {
+			continue
+		}
+		w.mu.Lock()
+		hm := *w.health(m)
+		w.mu.Unlock()
+		if hm.HeavyFail >= c.Watchdog.Fail && time.Now().Unix()-hm.HeavyAt < 1800 {
+			continue // 30 分钟内吞吐不达标的先跳过
+		}
+		if w.Delay(m) == 0 { // 当场确认
+			continue
+		}
+		return w.switchTo(g, cur, m, reason)
+	}
+	return false
+}
+
+func (w *Watchdog) switchTo(g Group, from, to, reason string) bool {
 	c := w.d.conf()
 	cg, _ := findGroup(c, g.Name)
 	okDirect := to == "direct" && !cg.Strict && cg.Type == "failover" && len(c.members(g.Name)) > 0
 	if !okDirect && !allowedIn(c, cg, to, nodeMap(c)) { // 最后一道闸（用最新配置）
 		w.d.events.add("error", fmt.Sprintf("看门狗拒绝把 %s 切到 %s（不在组内 / 断网保护）", g.Name, to))
-		return
+		return false
 	}
 	if err := w.d.clash().doCtx(w.d.ctx, 5*time.Second, "PUT", "/proxies/"+url.PathEscape(g.Name), map[string]string{"name": to}, nil); err != nil {
 		w.d.events.add("error", fmt.Sprintf("%s 切换到 %s 失败：%v", g.Name, to, err))
-		return
+		return false
 	}
 	w.mu.Lock()
-	w.gstate(g.Name).Note = ""
+	st := w.gstate(g.Name)
+	st.Note = ""
+	st.clearFast()
+	st.Cur = to
 	w.mu.Unlock()
+	w.recordSwitch(switchEv{T: time.Now().Unix(), G: g.Name, From: from, To: to, Why: reason, Fast: strings.HasPrefix(reason, "快速复测")})
 	w.d.events.add("switch", fmt.Sprintf("%s：%s → %s（%s）", g.Name, from, to, reason))
+	return true
 }
 
 func indexOf(a []string, s string) int {

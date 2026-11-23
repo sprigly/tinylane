@@ -310,6 +310,9 @@ func (p *Panel) api(w http.ResponseWriter, r *http.Request) {
 	for k, v := range p.routesM6() {
 		rt[k] = v
 	}
+	for k, v := range p.routesM11() {
+		rt[k] = v
+	}
 	h, ok := rt[r.Method+" "+path]
 	if !ok {
 		jerr(w, 404, "没有这个接口")
@@ -365,9 +368,10 @@ func (p *Panel) routes() map[string]handler {
 			}
 			return nil, nil
 		},
-		"GET /state": func(r *http.Request, _ map[string]json.RawMessage) (any, error) { return p.state(), nil },
-		"GET /live":  func(r *http.Request, _ map[string]json.RawMessage) (any, error) { return p.live(), nil },
-		"GET /conns": func(r *http.Request, _ map[string]json.RawMessage) (any, error) { return p.conns() },
+		"GET /state":   func(r *http.Request, _ map[string]json.RawMessage) (any, error) { return p.state(), nil },
+		"GET /live":    func(r *http.Request, _ map[string]json.RawMessage) (any, error) { return p.live(), nil },
+		"GET /memhist": func(r *http.Request, _ map[string]json.RawMessage) (any, error) { return p.d.memHistView(), nil },
+		"GET /conns":   func(r *http.Request, _ map[string]json.RawMessage) (any, error) { return p.conns() },
 		"POST /mode": func(r *http.Request, in map[string]json.RawMessage) (any, error) {
 			mode := gets(in, "mode")
 			if mode != "rule" && mode != "global" && mode != "direct" {
@@ -533,8 +537,42 @@ func (p *Panel) routes() map[string]handler {
 				if _, ok := in["kernel_conn_log"]; ok {
 					m["kernel_conn_log"] = getb(in, "kernel_conn_log")
 				}
+				if _, ok := in["core_mem_limit_mb"]; ok {
+					v := geti(in, "core_mem_limit_mb")
+					if err := validMemLimit(v); err != nil {
+						return err
+					}
+					m["core_mem_limit_mb"] = v
+				}
 				return nil
 			})
+		},
+		// M10：设置 → 自动切换。只改 watchdog 里的几个键，不进生成的内核配置，所以不重启 / 不重载内核。
+		"POST /watchdog/auto": func(r *http.Request, in map[string]json.RawMessage) (any, error) {
+			var a autoIn
+			b, _ := json.Marshal(in)
+			if err := json.Unmarshal(b, &a); err != nil {
+				return nil, fmt.Errorf("参数无效")
+			}
+			kv, err := validAuto(a)
+			if err != nil {
+				return nil, err
+			}
+			err = d.applyEdit(applyOpts{desc: "自动切换设置已保存"}, func(m map[string]any) error {
+				wm, _ := m["watchdog"].(map[string]any)
+				if wm == nil {
+					wm = map[string]any{}
+				}
+				for k, v := range kv {
+					wm[k] = v
+				}
+				m["watchdog"] = wm
+				return nil
+			})
+			if err == nil && d.wd != nil {
+				d.wd.Kick()
+			}
+			return nil, err
 		},
 		"POST /optimize/measure": func(r *http.Request, in map[string]json.RawMessage) (any, error) {
 			return d.sqmMeasure()
@@ -1048,17 +1086,20 @@ func (p *Panel) state() map[string]any {
 		"core_restarts": d.coreRestarts.Load(),
 		"main_group":    c.MainGroup, "groups": gv, "nodes": nv, "rules": rules,
 		"guest": c.Guest, "devices": c.Devices, "subs": subs, "rulesets": rs,
-		"watchdog": c.Watchdog, "events": d.events.recent(60),
-		"optimize": map[string]any{"sqm": c.SQM, "kernel_cn_bypass": c.KernelCNBypass == nil || *c.KernelCNBypass, "direct_connect_timeout_s": c.DirectTimeoutS, "kernel_conn_log": kernLogOn(c), "kern": d.kern.stats(),
+		"watchdog": c.Watchdog, "events": d.events.recent(60), "auto": autoViewD(d, c),
+		"optimize": map[string]any{"sqm": c.SQM, "kernel_cn_bypass": c.KernelCNBypass == nil || *c.KernelCNBypass, "direct_connect_timeout_s": c.DirectTimeoutS, "kernel_conn_log": kernLogOn(c), "kern": d.kern.stats(), "core_mem_limit_mb": coreMemLimitMB(c),
 			"cn4_count": len(loadCN4(c.RuleSets.Dir)), "sqm_available": fileExists(d.sqmScript)},
-		"basic": map[string]any{"lan_iface": c.LAN.Iface, "tproxy_port": c.TProxyPort, "dns_cn": c.DNS.CN, "dns_foreign": c.DNS.Foreign, "mixed": c.MixedListen},
-		"rss":   map[string]int64{"core": procRSS(d.corePid()), "daemon": procRSS(os.Getpid())},
+		"basic":  map[string]any{"lan_iface": c.LAN.Iface, "tproxy_port": c.TProxyPort, "dns_cn": c.DNS.CN, "dns_foreign": c.DNS.Foreign, "mixed": c.MixedListen},
+		"rss":    map[string]int64{"core": procRSS(d.corePid()), "daemon": procRSS(os.Getpid())},
 		"import": map[string]any{"exclude": c.importExclude(), "default_exclude": defaultImportExclude, "egress_probe": c.egressAuto()},
 	}
 	if d.egress != nil {
 		st["egress"] = d.egress.status()
 	}
 	p.stateM6(st)
+	if d.upd != nil {
+		st["update"] = d.upd.brief()
+	}
 	return st
 }
 

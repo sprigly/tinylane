@@ -1,6 +1,13 @@
 name: release
 
 # 发布 Release 时自动编译 linux/arm64 二进制并附到该 Release；也可以手动运行（只产出构件，不上传）。
+#
+# 可复现构建 + 预先签名（0.4.5 起）：
+#   作者在本地用完全相同的方式编译，把 SHA256SUMS 和 ed25519 签名提交到 release-sigs/v<版本>/。
+#   这里编译出的程序和 .gz 的 sha256 必须和那份签名清单逐字节一致，并且签名要能用程序里的公钥验证通过，
+#   才会把程序、.gz、清单、签名附到 Release；任何一项不一致，工作流直接失败（不发没签名或对不上的包）。
+#   私钥只在作者本地，不放仓库，也不需要 Actions Secret。
+
 on:
   release:
     types: [published]
@@ -18,23 +25,56 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Go 版本钉死（和作者本地复现构建一致），不要改成 1.27.x / check-latest，否则产物会变
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.27.x'
-          check-latest: true
+          go-version: '1.27.4'
+          check-latest: false
+          cache: false
 
       - name: 获取 sing-box v1.14.4 源码
         run: git clone --depth 1 --branch v1.14.4 https://github.com/SagerNet/sing-box.git "$RUNNER_TEMP/sing-box"
 
-      - name: 编译
+      - name: 编译（可复现）
         env:
           SB: ${{ runner.temp }}/sing-box
           GOARCH: ${{ matrix.goarch }}
+          TL_RELEASE: '1'
         run: |
+          go version
           VER="${GITHUB_REF_NAME#v}"
+          [ "$GITHUB_EVENT_NAME" = release ] || VER=$(sed -n 's/^const tlVersion = "\(.*\)"$/\1/p' src/cmd/tinylane/main.go)
+          echo "VER=$VER" >> "$GITHUB_ENV"
           OUT="$PWD/dist/tinylane-${VER}-linux-${GOARCH}"
           OUT="$OUT" sh build.sh
-          cd dist && sha256sum * > SHA256SUMS-${GOARCH}.txt && ls -l
+          gzip -9 -n -k "$OUT"
+          gzip --version | head -1
+          cd dist && sha256sum tinylane-* > SHA256SUMS-${GOARCH}.txt && cat SHA256SUMS-${GOARCH}.txt && ls -l
+
+      - name: 核对签名清单
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          # 与 src/cmd/tinylane/m11.go 的 updPubKeyB64 相同（ed25519 原始 32 字节）
+          PUB_B64: vhFLnHxnQ4g3mnGRf8Yjw/mB7myftoeGWXyyasc2eKI=
+        run: |
+          S=SHA256SUMS-${GOARCH}.txt
+          D=release-sigs/v$VER
+          grep -q "\"$PUB_B64\"" src/cmd/tinylane/m11.go || { echo "::error::程序里的公钥和工作流里的不一样"; exit 1; }
+          if [ ! -f "$D/$S" ] || [ ! -f "$D/$S.sig" ]; then
+            if [ "$GITHUB_EVENT_NAME" = release ]; then echo "::error::仓库里没有 $D/$S 和 .sig，不能发布没签名的更新包"; exit 1; fi
+            echo "::warning::没有 $D 的签名（手动运行），只产出未签名构件"; exit 0
+          fi
+          if ! cmp -s "dist/$S" "$D/$S"; then
+            echo "::error::编译产物和签名清单不一致（构建不可复现或源码不是签名时的那份）"
+            diff "$D/$S" "dist/$S" || true; exit 1
+          fi
+          # 用程序里的公钥验签：ed25519 SubjectPublicKeyInfo = 固定 12 字节前缀 + 32 字节公钥
+          { printf '\060\052\060\005\006\003\053\145\160\003\041\000'; echo "$PUB_B64" | base64 -d; } > "$RUNNER_TEMP/pub.der"
+          openssl pkey -pubin -inform DER -in "$RUNNER_TEMP/pub.der" -out "$RUNNER_TEMP/pub.pem"
+          base64 -d "$D/$S.sig" > "$RUNNER_TEMP/sig.bin"
+          openssl pkeyutl -verify -pubin -inkey "$RUNNER_TEMP/pub.pem" -rawin -in "$D/$S" -sigfile "$RUNNER_TEMP/sig.bin"
+          cp "$D/$S.sig" dist/
+          ls -l dist
 
       - uses: actions/upload-artifact@v4
         with:

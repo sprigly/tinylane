@@ -37,8 +37,8 @@ type Daemon struct {
 
 	mu    sync.Mutex // 配置修改串行
 	sqmMu sync.Mutex
-	cfg atomic.Pointer[Config]
-	api atomic.Pointer[apiClient]
+	cfg   atomic.Pointer[Config]
+	api   atomic.Pointer[apiClient]
 
 	coreMu       sync.Mutex
 	core         *exec.Cmd
@@ -51,21 +51,25 @@ type Daemon struct {
 	coreUp       atomic.Bool
 	coreRestarts atomic.Int64
 
-	events  *EventLog
-	traffic *TrafficRing
-	wd      *Watchdog
-	subs    *SubManager
-	panel   *Panel
-	hist    *History
-	rsm     *RuleSetManager
-	imp     *ImportManager
-	acct    *Acct
-	kern    *KernConns
-	egress  *EgressMgr // M7
-	raw     RawPending
-	gjob    guestJob
-	ctx     context.Context
-	cancel  context.CancelFunc
+	events      *EventLog
+	traffic     *TrafficRing
+	memh        *MemHist
+	wd          *Watchdog
+	subs        *SubManager
+	panel       *Panel
+	hist        *History
+	rsm         *RuleSetManager
+	imp         *ImportManager
+	acct        *Acct
+	kern        *KernConns
+	egress      *EgressMgr      // M7
+	cerr        *coreErrCounter // M10 内核超时报错计数
+	upd         *Updater        // M11 检查更新 / 一键更新
+	coreErrOnce sync.Once
+	raw         RawPending
+	gjob        guestJob
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
 func cmdDaemon(args []string) error {
@@ -93,7 +97,8 @@ func cmdDaemon(args []string) error {
 	os.MkdirAll(d.runDir, 0o700)
 	os.MkdirAll(d.workDir, 0o700)
 	d.events = newEventLog(filepath.Join(d.workDir, "events.log"))
-	d.traffic = &TrafficRing{}
+	d.memh = &MemHist{}
+	d.traffic = &TrafficRing{mh: d.memh}
 	d.ctx, d.cancel = context.WithCancel(context.Background())
 
 	migNotes := d.migrateOnStart()
@@ -111,6 +116,7 @@ func cmdDaemon(args []string) error {
 	go d.applySQM(c, true)
 	d.killStaleCore()
 
+	go d.memHistLoop()
 	go d.superviseCore()
 	go d.healthLoop()
 	go d.traffic.run(d.ctx, d)
@@ -139,6 +145,8 @@ func cmdDaemon(args []string) error {
 		go d.panel.serve()
 	}
 	d.events.add("system", "TinyLane 守护进程启动（"+tlVersion+"）")
+	d.upd = newUpdater(d)
+	go d.upd.loop(d.ctx)
 	for _, n := range migNotes {
 		d.events.add("config", "配置迁移（M7）："+n)
 	}
@@ -169,7 +177,7 @@ func (d *Daemon) setConfig(c *Config) {
 	d.api.Store(&apiClient{base: "http://" + c.ClashAPI.Listen, secret: c.ClashAPI.Secret, hc: clashHTTP})
 }
 
-func (d *Daemon) conf() *Config { return d.cfg.Load() }
+func (d *Daemon) conf() *Config     { return d.cfg.Load() }
 func (d *Daemon) clash() *apiClient { return d.api.Load() }
 
 // ---------------- 生成文件 ----------------
@@ -270,8 +278,10 @@ func (d *Daemon) superviseCore() {
 	setOOMAdj(0, daemonOOMAdj)
 	backoff := time.Second
 	for !d.stopping.Load() {
+		d.writeMemLimit(d.conf())
 		cmd := exec.Command(d.self, "run", "-c", d.sbPath, "-D", d.workDir)
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		// M10：内核输出经旁路原样转发（logread 里照旧是 daemon.err），同时数超时类报错
+		cmd.Stdout, cmd.Stderr = &lineTap{out: os.Stdout, cnt: d.coreErrs()}, &lineTap{out: os.Stderr, cnt: d.coreErrs()}
 		cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
 		if err := cmd.Start(); err != nil {
 			d.events.add("error", "内核启动失败："+err.Error())
@@ -884,6 +894,7 @@ type TrafficRing struct {
 	mu   sync.Mutex
 	pts  [][2]int64 // up, down（字节/秒）
 	last time.Time
+	mh   *MemHist
 }
 
 func (t *TrafficRing) push(up, down int64) {
@@ -894,6 +905,9 @@ func (t *TrafficRing) push(up, down int64) {
 	}
 	t.last = time.Now()
 	t.mu.Unlock()
+	if t.mh != nil {
+		t.mh.addTraffic(up, down)
+	}
 }
 
 func (t *TrafficRing) snapshot() ([][2]int64, bool) {
