@@ -325,3 +325,7 @@ header .spd,header #thm,header .sw{flex-shrink:0}
 .up-res.ok .up-ic{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}.up-res.bad .up-ic{background:color-mix(in srgb,var(--bad) 14%,transparent);color:var(--bad)}
 .up-err{color:var(--bad)!important}
 .up-items .wt{color:var(--mut)}.up-items .wt i{color:var(--warn)}
+
+/* 0.4.6：概览标题旁的版本号（小号灰字，同一行不换行） */
+h2.ovh{flex-wrap:nowrap;white-space:nowrap}
+h2.ovh .ver{font-size:13px;line-height:1;font-weight:500;letter-spacing:0;color:var(--mut);white-space:nowrap;flex:none}

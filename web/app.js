@@ -81,7 +81,7 @@ function grp(n){return (S.st?.groups||[]).find(g=>g.name==n)}
 function evList(n){const ev=(S.st?.events||[]).slice(0,n);return ev.length?ev.map(e=>`<div class="ev"><time>${tfmt(e.t)}</time><div class="${e.kind=='error'?'chg':''}">${esc(relab(e.msg))}</div></div>`).join(''):'<p class="mut">暂无事件</p>'}
 V.ov=()=>{const st=S.st,g=grp(st.main_group)||st.groups[0],n=g?.now||'—',nd=nodeBy(n),h=nd.health||{},mg=st.groups.find(x=>x.strict&&x.type=='failover'&&x.name!=g?.name)||st.groups.find(x=>x.type=='failover'&&x.name!=g?.name),cx=S.cx;
  const on=cx?cx.devices.filter(d=>d.online).length:'…';
- return `<h2>概览</h2>${rawBanner()}
+ return `<h2 class="ovh">概览${st.version?`<span class="ver">v${esc(String(st.version).replace(/^v/,''))}</span>`:''}</h2>${rawBanner()}
 ${st.fallback?'<div class="banner bad">内核短时间内多次崩溃，已自动撤掉透明代理，全部设备临时直连上网；内核稳定后会自动恢复。</div>':''}
 ${st.enabled?'':'<div class="banner">代理已停用，所有设备直连上网。</div>'}
 <div class="card"><div class="row" style="margin-bottom:12px"><div style="flex:1"><b>启用代理</b><div class="mut" style="font-size:12px">关闭后全部直连，不影响上网</div></div><div class="sw ${st.enabled?'on':''}" data-a="power"></div></div>
